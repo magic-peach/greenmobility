@@ -2,9 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './config/env';
 import authRoutes from './routes/authRoutes';
+import userRoutes from './routes/userRoutes';
+import kycRoutes from './routes/kycRoutes';
 import rideRoutes from './routes/rideRoutes';
 import parkingRoutes from './routes/parkingRoutes';
 import rewardRoutes from './routes/rewardRoutes';
+import couponRoutes from './routes/couponRoutes';
+import sosRoutes from './routes/sosRoutes';
+import supportRoutes from './routes/supportRoutes';
+import chatbotRoutes from './routes/chatbotRoutes';
 import adminRoutes from './routes/adminRoutes';
 
 const app = express();
@@ -23,9 +29,15 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/kyc', kycRoutes);
 app.use('/api/rides', rideRoutes);
 app.use('/api/parking', parkingRoutes);
 app.use('/api/rewards', rewardRoutes);
+app.use('/api/coupons', couponRoutes);
+app.use('/api/sos', sosRoutes);
+app.use('/api/support', supportRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Error handling middleware

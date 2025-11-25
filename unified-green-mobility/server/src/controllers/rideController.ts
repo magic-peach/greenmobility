@@ -3,6 +3,10 @@ import { supabaseAdmin } from '../config/supabaseClient';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { haversineDistance, isWithinRadius } from '../utils/distanceUtils'
 import { calculateFareShare, estimateFuelCost } from '../utils/fareCalculator'
+import { generateOTP } from '../utils/otp'
+import { getDistanceAndETA } from '../utils/distance'
+import { calculateCO2, calculateCO2Saved } from '../utils/co2Calculator'
+import { awardPointsForCompletedRide } from '../utils/points'
 
 export const rideController = {
   async createRide(req: AuthRequest, res: Response) {
@@ -11,18 +15,44 @@ export const rideController = {
         return res.status(401).json({ error: 'Unauthorized' })
       }
 
+      // Check user is driver and KYC approved
+      const { data: user } = await supabaseAdmin
+        .from('users')
+        .select('role, kyc_status')
+        .eq('id', req.user.id)
+        .single()
+
+      if (user?.role !== 'driver') {
+        return res.status(403).json({ error: 'Only drivers can create rides' })
+      }
+
+      if (user?.kyc_status !== 'approved') {
+        return res.status(403).json({ error: 'KYC approval required to create rides' })
+      }
+
       const {
-        start_location_name,
-        start_lat,
-        start_lng,
-        end_location_name,
-        end_lat,
-        end_lng,
+        origin_name,
+        origin_lat,
+        origin_lng,
+        destination_name,
+        destination_lat,
+        destination_lng,
         departure_time,
-        vehicle_type,
+        car_brand,
+        car_model,
+        car_category,
         total_seats,
         estimated_fare,
       } = req.body
+
+      // Support legacy field names
+      const start_location_name = origin_name || req.body.start_location_name
+      const start_lat = origin_lat || req.body.start_lat
+      const start_lng = origin_lng || req.body.start_lng
+      const end_location_name = destination_name || req.body.end_location_name
+      const end_lat = destination_lat || req.body.end_lat
+      const end_lng = destination_lng || req.body.end_lng
+      const vehicle_type = req.body.vehicle_type || 'car'
 
       const totalDistance = haversineDistance(start_lat, start_lng, end_lat, end_lng)
       const fuelCost = estimated_fare || estimateFuelCost(totalDistance, vehicle_type)
@@ -37,17 +67,27 @@ export const rideController = {
           end_location_name,
           end_lat,
           end_lng,
+          origin_name: start_location_name,
+          origin_lat: start_lat,
+          origin_lng: start_lng,
+          destination_name: end_location_name,
+          destination_lat: end_lat,
+          destination_lng: end_lng,
           departure_time,
           vehicle_type,
+          car_brand,
+          car_model,
+          car_category: car_category || 'other',
           total_seats,
           available_seats: total_seats - 1, // Driver occupies one seat
           estimated_fare: fuelCost,
+          status: 'upcoming',
         })
         .select()
         .single()
 
       if (error) {
-        return res.status(400).json({ error: 'Failed to create ride' })
+        return res.status(400).json({ error: 'Failed to create ride', details: error.message })
       }
 
       res.status(201).json(data)
@@ -76,11 +116,11 @@ export const rideController = {
       const windowStart = new Date(now.getTime() - timeWindow * 60 * 60 * 1000)
       const windowEnd = new Date(now.getTime() + timeWindow * 60 * 60 * 1000)
 
-      // Get all open rides
+      // Get all upcoming rides
       const { data: rides, error } = await supabaseAdmin
         .from('rides')
         .select('*, driver:users(*)')
-        .eq('status', 'open')
+        .eq('status', 'upcoming')
         .gte('departure_time', windowStart.toISOString())
         .lte('departure_time', windowEnd.toISOString())
         .gt('available_seats', 0)
@@ -135,7 +175,7 @@ export const rideController = {
       } = req.body
 
       // Get ride details
-      const { data: ride, error: rideError } = await supabase
+      const { data: ride, error: rideError } = await supabaseAdmin
         .from('rides')
         .select('*')
         .eq('id', rideId)
@@ -231,9 +271,15 @@ export const rideController = {
         return res.status(400).json({ error: 'Failed to update passenger status' })
       }
 
-      // If accepted, decrease available seats
+      // If accepted, decrease available seats and generate OTP
       if (status === 'accepted') {
-        await supabase.rpc('decrement_available_seats', { ride_id: rideId })
+        const otpCode = generateOTP();
+        await supabaseAdmin
+          .from('ride_passengers')
+          .update({ otp_code: otpCode })
+          .eq('id', passengerId);
+        
+        await supabaseAdmin.rpc('decrement_available_seats', { ride_id: rideId });
       }
 
       res.json(data)
@@ -430,10 +476,10 @@ export const rideController = {
 
       // Simple heuristic: count rides in similar areas/time windows
       // This is a placeholder for more sophisticated ML-based prediction
-      const { data: rides, error } = await supabase
+      const { data: rides, error } = await supabaseAdmin
         .from('rides')
         .select('*')
-        .eq('status', 'open')
+        .eq('status', 'upcoming')
 
       if (error) {
         return res.status(400).json({ error: 'Failed to fetch ride demand' })
@@ -460,6 +506,594 @@ export const rideController = {
     } catch (error: any) {
       console.error('Get ride demand error:', error)
       res.status(500).json({ error: 'Internal server error' })
+    }
+  },
+
+  async requestRide(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId } = req.params;
+
+      // Check user KYC status
+      const { data: user } = await supabaseAdmin
+        .from('users')
+        .select('kyc_status')
+        .eq('id', req.user.id)
+        .single();
+
+      if (user?.kyc_status !== 'approved') {
+        return res.status(403).json({ error: 'KYC approval required to join rides' });
+      }
+
+      // Get ride details
+      const { data: ride, error: rideError } = await supabaseAdmin
+        .from('rides')
+        .select('*')
+        .eq('id', rideId)
+        .single();
+
+      if (rideError || !ride) {
+        return res.status(404).json({ error: 'Ride not found' });
+      }
+
+      if (ride.status !== 'upcoming') {
+        return res.status(400).json({ error: 'Ride is not accepting requests' });
+      }
+
+      if (ride.available_seats <= 0) {
+        return res.status(400).json({ error: 'No available seats' });
+      }
+
+      // Check if user already requested
+      const { data: existingRequest } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('id')
+        .eq('ride_id', rideId)
+        .eq('passenger_id', req.user.id)
+        .single();
+
+      if (existingRequest) {
+        return res.status(400).json({ error: 'You have already requested this ride' });
+      }
+
+      // Create request (will be handled by joinRide, but this is the new endpoint name)
+      res.status(200).json({ message: 'Ride request created', rideId });
+    } catch (error: any) {
+      console.error('Request ride error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async acceptPassenger(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId, passengerId } = req.params;
+
+      // Verify user is the driver
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('*')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride || ride.driver_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the driver can accept passengers' });
+      }
+
+      if (ride.available_seats <= 0) {
+        return res.status(400).json({ error: 'Carpool limit exceeded for this ride' });
+      }
+
+      // Generate OTP
+      const otpCode = generateOTP();
+
+      // Update passenger status and set OTP
+      const { data, error } = await supabaseAdmin
+        .from('ride_passengers')
+        .update({
+          status: 'accepted',
+          otp_code: otpCode,
+          otp_verified: false,
+        })
+        .eq('id', passengerId)
+        .eq('ride_id', rideId)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to accept passenger' });
+      }
+
+      // Decrement available seats
+      await supabaseAdmin.rpc('decrement_available_seats', { ride_id: rideId });
+
+      res.json({ ...data, otp_code: otpCode }); // Return OTP for driver to share
+    } catch (error: any) {
+      console.error('Accept passenger error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async rejectPassenger(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId, passengerId } = req.params;
+
+      // Verify user is the driver
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('driver_id')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride || ride.driver_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the driver can reject passengers' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('ride_passengers')
+        .update({ status: 'rejected' })
+        .eq('id', passengerId)
+        .eq('ride_id', rideId)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to reject passenger' });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error('Reject passenger error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async verifyOTP(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId, passengerId } = req.params;
+      const { otp } = req.body;
+
+      if (!otp) {
+        return res.status(400).json({ error: 'OTP is required' });
+      }
+
+      // Verify user is the driver
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('driver_id')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride || ride.driver_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the driver can verify OTP' });
+      }
+
+      // Get passenger record
+      const { data: passenger, error: passengerError } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('*')
+        .eq('id', passengerId)
+        .eq('ride_id', rideId)
+        .single();
+
+      if (passengerError || !passenger) {
+        return res.status(404).json({ error: 'Passenger not found' });
+      }
+
+      if (passenger.otp_code !== otp) {
+        return res.status(401).json({ error: 'Invalid OTP' });
+      }
+
+      // Mark OTP as verified
+      const { data, error } = await supabaseAdmin
+        .from('ride_passengers')
+        .update({ otp_verified: true })
+        .eq('id', passengerId)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to verify OTP' });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error('Verify OTP error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async startRide(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId } = req.params;
+
+      // Verify user is the driver
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('*')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride || ride.driver_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the driver can start the ride' });
+      }
+
+      if (ride.status !== 'upcoming') {
+        return res.status(400).json({ error: 'Ride cannot be started' });
+      }
+
+      // Check all accepted passengers have verified OTP
+      const { data: passengers } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('*')
+        .eq('ride_id', rideId)
+        .eq('status', 'accepted');
+
+      const allVerified = passengers?.every(p => p.otp_verified === true) ?? true;
+
+      if (!allVerified && passengers && passengers.length > 0) {
+        return res.status(400).json({ error: 'All passengers must verify OTP before starting' });
+      }
+
+      // Update ride status
+      const { data, error } = await supabaseAdmin
+        .from('rides')
+        .update({ status: 'ongoing' })
+        .eq('id', rideId)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to start ride' });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error('Start ride error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async completeRide(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId } = req.params;
+
+      // Verify user is the driver
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('*')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride || ride.driver_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the driver can complete the ride' });
+      }
+
+      if (ride.status !== 'ongoing') {
+        return res.status(400).json({ error: 'Ride is not ongoing' });
+      }
+
+      // Calculate distance using Google Directions API
+      const distanceResult = await getDistanceAndETA(
+        parseFloat(ride.origin_lat || ride.start_lat),
+        parseFloat(ride.origin_lng || ride.start_lng),
+        parseFloat(ride.destination_lat || ride.end_lat),
+        parseFloat(ride.destination_lng || ride.end_lng)
+      );
+
+      const distanceKm = distanceResult?.distanceKm || haversineDistance(
+        parseFloat(ride.origin_lat || ride.start_lat),
+        parseFloat(ride.origin_lng || ride.start_lng),
+        parseFloat(ride.destination_lat || ride.end_lat),
+        parseFloat(ride.destination_lng || ride.end_lng)
+      );
+
+      // Calculate CO2 emissions
+      const carCategory = ride.car_category || 'other';
+      const co2Emitted = calculateCO2(carCategory as any, distanceKm);
+      const passengersCount = ride.total_seats - ride.available_seats - 1; // Exclude driver
+      const co2Saved = calculateCO2Saved(carCategory as any, distanceKm, passengersCount);
+
+      // Get accepted passengers
+      const { data: passengers } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('*')
+        .eq('ride_id', rideId)
+        .eq('status', 'accepted');
+
+      const passengerIds = passengers?.map(p => p.passenger_id) || [];
+
+      // Calculate fare for each passenger
+      const baseFare = ride.estimated_fare || (distanceKm * 10); // 10 per km default
+      const farePerPassenger = baseFare / (passengersCount + 1); // Share among all
+
+      // Update passenger fare amounts
+      for (const passenger of passengers || []) {
+        await supabaseAdmin
+          .from('ride_passengers')
+          .update({
+            fare_amount: farePerPassenger,
+            payment_status: 'pending',
+            status: 'completed',
+          })
+          .eq('id', passenger.id);
+      }
+
+      // Update ride
+      const { data: updatedRide, error: rideError } = await supabaseAdmin
+        .from('rides')
+        .update({
+          status: 'completed',
+          distance_km: distanceKm,
+          co2_emitted_kg: co2Emitted,
+        })
+        .eq('id', rideId)
+        .select()
+        .single();
+
+      if (rideError) {
+        return res.status(400).json({ error: 'Failed to complete ride' });
+      }
+
+      // Award points
+      await awardPointsForCompletedRide(
+        rideId,
+        ride.driver_id,
+        passengerIds,
+        distanceKm,
+        co2Saved
+      );
+
+      res.json(updatedRide);
+    } catch (error: any) {
+      console.error('Complete ride error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async closeRide(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId } = req.params;
+
+      // Verify user is the driver
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('driver_id')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride || ride.driver_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the driver can close the ride' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('rides')
+        .update({ status: 'closed' })
+        .eq('id', rideId)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to close ride' });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error('Close ride error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async getPayments(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId } = req.params;
+
+      // Verify user is the driver
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('driver_id')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride || ride.driver_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the driver can view payments' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('*, passenger:users(id, name, email)')
+        .eq('ride_id', rideId)
+        .eq('status', 'accepted');
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to fetch payments' });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error('Get payments error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async markPayment(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId } = req.params;
+
+      // Get passenger record for this user
+      const { data: passenger, error: passengerError } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('*')
+        .eq('ride_id', rideId)
+        .eq('passenger_id', req.user.id)
+        .single();
+
+      if (passengerError || !passenger) {
+        return res.status(404).json({ error: 'Passenger record not found' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('ride_passengers')
+        .update({ payment_status: 'marked_paid' })
+        .eq('id', passenger.id)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to mark payment' });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error('Mark payment error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async confirmPayment(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { rideId, passengerId } = req.params;
+
+      // Verify user is the driver
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('driver_id')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride || ride.driver_id !== req.user.id) {
+        return res.status(403).json({ error: 'Only the driver can confirm payment' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('ride_passengers')
+        .update({ payment_status: 'confirmed' })
+        .eq('id', passengerId)
+        .eq('ride_id', rideId)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to confirm payment' });
+      }
+
+      // Check if all payments are confirmed
+      const { data: allPassengers } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('payment_status')
+        .eq('ride_id', rideId)
+        .eq('status', 'accepted');
+
+      const allConfirmed = allPassengers?.every(p => p.payment_status === 'confirmed') ?? false;
+
+      if (allConfirmed && allPassengers && allPassengers.length > 0) {
+        // Optionally auto-close ride
+        await supabaseAdmin
+          .from('rides')
+          .update({ status: 'closed' })
+          .eq('id', rideId);
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error('Confirm payment error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async getETA(req: AuthRequest, res: Response) {
+    try {
+      const { rideId } = req.params;
+
+      // Get latest location
+      const { data: latestLocation } = await supabaseAdmin
+        .from('ride_locations')
+        .select('*')
+        .eq('ride_id', rideId)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .single();
+
+      // Get ride destination
+      const { data: ride } = await supabaseAdmin
+        .from('rides')
+        .select('*')
+        .eq('id', rideId)
+        .single();
+
+      if (!ride) {
+        return res.status(404).json({ error: 'Ride not found' });
+      }
+
+      if (!latestLocation) {
+        return res.status(400).json({ error: 'No location data available' });
+      }
+
+      // Calculate ETA
+      const etaResult = await getDistanceAndETA(
+        parseFloat(latestLocation.lat),
+        parseFloat(latestLocation.lng),
+        parseFloat(ride.destination_lat || ride.end_lat),
+        parseFloat(ride.destination_lng || ride.end_lng)
+      );
+
+      if (!etaResult) {
+        return res.status(500).json({ error: 'Failed to calculate ETA' });
+      }
+
+      res.json({
+        distanceKm: etaResult.distanceKm,
+        distanceText: etaResult.distanceText,
+        durationSeconds: etaResult.durationSeconds,
+        durationText: etaResult.durationText,
+        eta: etaResult.eta,
+        currentLocation: {
+          lat: latestLocation.lat,
+          lng: latestLocation.lng,
+          timestamp: latestLocation.timestamp,
+        },
+      });
+    } catch (error: any) {
+      console.error('Get ETA error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   },
 }

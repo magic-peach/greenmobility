@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { supabaseAdmin } from '../config/supabaseClient';
 import { AuthRequest } from '../middleware/authMiddleware';
+import { generateOTPWithExpiry, verifyOTP, isOTPExpired } from '../utils/otp';
 
 export const authController = {
   async register(req: Request, res: Response) {
@@ -140,6 +141,94 @@ export const authController = {
     } catch (error: any) {
       console.error('KYC submission error:', error);
       res.status(500).json({ error: 'KYC submission failed', message: error.message });
+    }
+  },
+
+  async requestAdminOTP(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      // Generate OTP
+      const { code, expiresAt } = generateOTPWithExpiry(10);
+
+      // Store OTP in admin_sessions table
+      const { data: session, error } = await supabaseAdmin
+        .from('admin_sessions')
+        .insert({
+          user_id: req.user.id,
+          otp_code: code,
+          otp_expires_at: expiresAt.toISOString(),
+          mfa_verified: false,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to create OTP session' });
+      }
+
+      // Send OTP via email (or log in dev)
+      const userEmail = req.user.email;
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[DEV] Admin OTP for ${userEmail}: ${code}`);
+      } else {
+        // TODO: Send email via SMTP
+        // await sendEmail(userEmail, 'Admin Login OTP', `Your OTP is: ${code}`);
+      }
+
+      res.json({ message: 'OTP sent to admin email', sessionId: session.id });
+    } catch (error: any) {
+      console.error('Request admin OTP error:', error);
+      res.status(500).json({ error: 'Failed to request OTP', message: error.message });
+    }
+  },
+
+  async verifyAdminOTP(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user || req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { otp, sessionId } = req.body;
+
+      if (!otp || !sessionId) {
+        return res.status(400).json({ error: 'OTP and session ID are required' });
+      }
+
+      // Get OTP session
+      const { data: session, error } = await supabaseAdmin
+        .from('admin_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (error || !session) {
+        return res.status(400).json({ error: 'Invalid session' });
+      }
+
+      // Check if expired
+      if (isOTPExpired(new Date(session.otp_expires_at))) {
+        return res.status(400).json({ error: 'OTP expired' });
+      }
+
+      // Verify OTP
+      if (!verifyOTP(otp, session.otp_code)) {
+        return res.status(401).json({ error: 'Invalid OTP' });
+      }
+
+      // Mark as verified
+      await supabaseAdmin
+        .from('admin_sessions')
+        .update({ mfa_verified: true })
+        .eq('id', sessionId);
+
+      res.json({ message: 'OTP verified successfully', mfaVerified: true });
+    } catch (error: any) {
+      console.error('Verify admin OTP error:', error);
+      res.status(500).json({ error: 'Failed to verify OTP', message: error.message });
     }
   },
 };

@@ -1,56 +1,57 @@
 /**
- * CO2 emissions factors (kg CO2 per km)
- * Based on average values for different transportation modes
+ * CO2 emissions factors (kg CO2 per km) by car category
+ * Based on average values for different car types
  */
 const EMISSIONS_FACTORS = {
-  'solo-car': 0.21, // kg CO2 per km
-  'carpool': 0.105, // Half of solo (assuming 2 passengers)
-  'bike': 0.0, // Zero emissions
-  'metro': 0.05, // Public transport
-  'scooter': 0.08, // Electric scooter
+  'hatchback': 0.14, // kg CO2 per km
+  'sedan': 0.18,
+  'suv': 0.22,
+  'ev': 0.02, // Electric vehicle
+  'other': 0.18,
 } as const;
 
-export type TransportMode = keyof typeof EMISSIONS_FACTORS;
+export type CarCategory = keyof typeof EMISSIONS_FACTORS;
 
 /**
- * Calculate CO2 emissions for a given distance and transport mode
+ * Calculate CO2 emissions for a given distance and car category
  */
-export function calculateCO2Emissions(
-  distanceKm: number,
-  mode: TransportMode
+export function calculateCO2(
+  carCategory: CarCategory,
+  distanceKm: number
 ): number {
-  const factor = EMISSIONS_FACTORS[mode] || EMISSIONS_FACTORS['solo-car'];
+  const factor = EMISSIONS_FACTORS[carCategory] || EMISSIONS_FACTORS['other'];
   return distanceKm * factor;
 }
 
 /**
- * Calculate CO2 saved compared to solo car driving
+ * Calculate CO2 saved for a carpool ride
+ * Compares solo car trips vs shared carpool
  */
 export function calculateCO2Saved(
+  carCategory: CarCategory,
   distanceKm: number,
-  mode: TransportMode
+  passengersCount: number
 ): number {
-  const soloEmissions = calculateCO2Emissions(distanceKm, 'solo-car');
-  const actualEmissions = calculateCO2Emissions(distanceKm, mode);
-  return soloEmissions - actualEmissions;
+  // If no passengers, no CO2 saved
+  if (passengersCount === 0) {
+    return 0;
+  }
+
+  // Average solo car emissions (using sedan as baseline)
+  const soloEmissionsPerKm = EMISSIONS_FACTORS['sedan'];
+  const totalSoloEmissions = soloEmissionsPerKm * distanceKm * passengersCount;
+
+  // Carpool emissions (shared among all passengers + driver)
+  const carpoolEmissionsPerKm = EMISSIONS_FACTORS[carCategory] || EMISSIONS_FACTORS['other'];
+  const totalCarpoolEmissions = carpoolEmissionsPerKm * distanceKm;
+
+  // CO2 saved = total solo emissions - carpool emissions
+  return totalSoloEmissions - totalCarpoolEmissions;
 }
 
 /**
- * Calculate CO2 saved for a carpool ride
- * Takes into account number of passengers
+ * Get emission factor for a car category
  */
-export function calculateCarpoolCO2Saved(
-  distanceKm: number,
-  passengerCount: number
-): number {
-  // Solo car emissions
-  const soloEmissions = calculateCO2Emissions(distanceKm, 'solo-car');
-  
-  // Carpool emissions (shared among passengers + driver)
-  const totalPeople = passengerCount + 1; // passengers + driver
-  const carpoolEmissionsPerPerson = calculateCO2Emissions(distanceKm, 'solo-car') / totalPeople;
-  const totalCarpoolEmissions = carpoolEmissionsPerPerson * totalPeople;
-  
-  // Total saved = (solo emissions * number of passengers) - carpool emissions
-  return soloEmissions * passengerCount - (totalCarpoolEmissions - soloEmissions);
+export function getEmissionFactor(carCategory: CarCategory): number {
+  return EMISSIONS_FACTORS[carCategory] || EMISSIONS_FACTORS['other'];
 }
