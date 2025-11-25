@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { ParkingMapPage } from '@/pages/ParkingMapPage';
+import ParkingDashboard from '@/components/parking/ParkingDashboard';
 import { Navbar } from '@/components/Navbar';
 import type { User, AppContextType } from '@/types/AppContext';
 
@@ -85,7 +85,7 @@ export default function Parking() {
         }}
       />
       <main className="pt-20">
-        <ParkingMapPage context={appContext} />
+        <ParkingDashboard context={appContext} />
       </main>
     </>
   );

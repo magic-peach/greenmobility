@@ -81,9 +81,15 @@ ALTER TABLE ride_passengers
   ADD COLUMN IF NOT EXISTS otp_verified BOOLEAN DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'pending' CHECK (payment_status IN ('pending', 'marked_paid', 'confirmed')),
   ADD COLUMN IF NOT EXISTS fare_amount DECIMAL(10, 2),
+  ADD COLUMN IF NOT EXISTS fare_amount_inr DECIMAL(10, 2), -- INR field for Indian Rupees
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW(),
   DROP CONSTRAINT IF EXISTS ride_passengers_status_check,
   ADD CONSTRAINT ride_passengers_status_check CHECK (status IN ('requested', 'accepted', 'rejected', 'cancelled', 'completed'));
+
+-- Migrate existing fare_amount to fare_amount_inr if needed
+UPDATE ride_passengers
+SET fare_amount_inr = fare_amount
+WHERE fare_amount_inr IS NULL AND fare_amount IS NOT NULL;
 
 -- User points table (consolidate user_rewards and user_emissions_stats)
 CREATE TABLE IF NOT EXISTS user_points (

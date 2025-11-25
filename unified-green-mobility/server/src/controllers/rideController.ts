@@ -825,16 +825,17 @@ export const rideController = {
 
       const passengerIds = passengers?.map(p => p.passenger_id) || [];
 
-      // Calculate fare for each passenger
-      const baseFare = ride.estimated_fare || (distanceKm * 10); // 10 per km default
-      const farePerPassenger = baseFare / (passengersCount + 1); // Share among all
+      // Calculate fare for each passenger in INR (₹10 per km base rate)
+      const baseFareINR = ride.estimated_fare || (distanceKm * 10); // ₹10 per km default
+      const farePerPassengerINR = baseFareINR / (passengersCount + 1); // Share among all
 
-      // Update passenger fare amounts
+      // Update passenger fare amounts (in INR)
       for (const passenger of passengers || []) {
         await supabaseAdmin
           .from('ride_passengers')
           .update({
-            fare_amount: farePerPassenger,
+            fare_amount: farePerPassengerINR, // Keep for backward compatibility
+            fare_amount_inr: farePerPassengerINR, // Primary INR field
             payment_status: 'pending',
             status: 'completed',
           })
