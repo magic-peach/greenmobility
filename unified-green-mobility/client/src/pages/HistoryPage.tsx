@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Car, ParkingSquare, Calendar, MapPin, Clock, DollarSign } from 'lucide-react';
+import { Car, ParkingSquare, Calendar, MapPin, Clock } from 'lucide-react';
+import { formatINR } from '@/utils/currency';
 import type { AppContextType } from '@/types/AppContext';
 import { projectId } from '../utils/supabase/info';
 
@@ -184,7 +185,7 @@ export function HistoryPage({ context }: HistoryPageProps) {
                       <div>
                         <p className="text-xs text-gray-400 mb-1">Fare</p>
                         <p className="text-sm font-medium text-green-400">
-                          ${ride.estimated_fare}
+                          {formatINR(ride.estimated_fare)}
                         </p>
                       </div>
                     )}

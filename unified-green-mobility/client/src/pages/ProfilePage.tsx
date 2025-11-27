@@ -12,20 +12,102 @@ export function ProfilePage({ context }: ProfilePageProps) {
     name: context.user?.name || '',
     phone: context.user?.phone || '',
   });
+  const [kycForm, setKycForm] = useState({
+    document_type: 'aadhaar',
+    document_number: '',
+    document_image_url: '',
+  });
+  const [submittingKYC, setSubmittingKYC] = useState(false);
+  const [kycError, setKycError] = useState('');
+  const [kycSuccess, setKycSuccess] = useState(false);
 
-  const handleSave = () => {
-    // In a real app, you'd save to backend here
-    setEditing(false);
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
+
+  const handleSave = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/users/me`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (response.ok) {
+        await context.refreshUser();
+        setEditing(false);
+      } else {
+        throw new Error('Failed to update profile');
+      }
+    } catch (error) {
+      console.error('Error updating profile:', error);
+    }
+  };
+
+  const handleKYCSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setKycError('');
+    setKycSuccess(false);
+
+    if (!kycForm.document_type || !kycForm.document_number) {
+      setKycError('Please fill all required fields');
+      return;
+    }
+
+    setSubmittingKYC(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/kyc/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+        body: JSON.stringify(kycForm),
+      });
+
+      if (response.ok) {
+        setKycSuccess(true);
+        setKycForm({ document_type: 'aadhaar', document_number: '', document_image_url: '' });
+        await context.refreshUser();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to submit KYC');
+      }
+    } catch (error: any) {
+      setKycError(error.message || 'Failed to submit KYC');
+    } finally {
+      setSubmittingKYC(false);
+    }
   };
 
   const getKycStatusColor = (status: string) => {
     switch (status) {
+      case 'approved':
       case 'verified':
         return 'badge-success';
       case 'pending':
         return 'badge-warning';
+      case 'rejected':
+        return 'badge-danger';
       default:
         return 'badge-info';
+    }
+  };
+
+  const getKycStatusText = (status: string) => {
+    switch (status) {
+      case 'approved':
+      case 'verified':
+        return 'Approved';
+      case 'pending':
+        return 'Pending Review';
+      case 'rejected':
+        return 'Rejected';
+      case 'not_submitted':
+        return 'Not Submitted';
+      default:
+        return 'Not Submitted';
     }
   };
 
@@ -65,8 +147,8 @@ export function ProfilePage({ context }: ProfilePageProps) {
             </div>
             <p className="text-gray-400 mb-4">{context.user?.email}</p>
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-              <span className={`badge capitalize ${getKycStatusColor(context.user?.kyc_status || 'unverified')}`}>
-                {context.user?.kyc_status}
+              <span className={`badge capitalize ${getKycStatusColor(context.user?.kyc_status || 'not_submitted')}`}>
+                {getKycStatusText(context.user?.kyc_status || 'not_submitted')}
               </span>
               <span className="badge badge-info capitalize">
                 {context.user?.role}
@@ -157,41 +239,84 @@ export function ProfilePage({ context }: ProfilePageProps) {
             KYC Verification
           </h2>
 
-          {context.user?.kyc_status === 'verified' ? (
+          {context.user?.kyc_status === 'approved' || context.user?.kyc_status === 'verified' ? (
             <div className="text-center py-8">
               <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4 neon-glow-green">
                 <CheckCircle className="text-green-400" size={40} />
               </div>
               <p className="text-lg font-medium text-green-400 mb-2">Verified Account</p>
-              <p className="text-sm text-gray-400">Your identity has been verified</p>
+              <p className="text-sm text-gray-400">Your identity has been verified. You can now create rides, join rides, and earn rewards.</p>
+            </div>
+          ) : context.user?.kyc_status === 'pending' ? (
+            <div className="text-center py-8">
+              <div className="w-20 h-20 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Shield className="text-orange-400" size={40} />
+              </div>
+              <p className="text-lg font-medium text-orange-400 mb-2">Pending Review</p>
+              <p className="text-sm text-gray-400">Your KYC submission is under review. You'll be notified once approved.</p>
+            </div>
+          ) : context.user?.kyc_status === 'rejected' ? (
+            <div className="text-center py-8">
+              <div className="w-20 h-20 bg-pink-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Shield className="text-pink-400" size={40} />
+              </div>
+              <p className="text-lg font-medium text-pink-400 mb-2">KYC Rejected</p>
+              <p className="text-sm text-gray-400 mb-4">Your KYC submission was rejected. Please submit again with correct information.</p>
+              <button
+                onClick={() => setKycForm({ document_type: 'aadhaar', document_number: '', document_image_url: '' })}
+                className="btn-secondary"
+              >
+                Resubmit KYC
+              </button>
             </div>
           ) : (
-            <div>
+            <form onSubmit={handleKYCSubmit}>
               <p className="text-gray-400 text-sm mb-6">
-                Complete KYC verification to unlock all features and build trust with other users.
+                Complete KYC verification to unlock all features: create rides, join rides, and earn rewards.
               </p>
+
+              {kycError && (
+                <div className="mb-4 p-4 bg-pink-500/20 border border-pink-500/50 rounded-lg text-pink-400 text-sm">
+                  {kycError}
+                </div>
+              )}
+
+              {kycSuccess && (
+                <div className="mb-4 p-4 bg-green-500/20 border border-green-500/50 rounded-lg text-green-400 text-sm">
+                  KYC submitted successfully! Your submission is under review.
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Document Type</label>
-                  <select className="input-field">
-                    <option>Driver's License</option>
-                    <option>Passport</option>
-                    <option>National ID</option>
+                  <label className="block text-sm text-gray-400 mb-2">Document Type *</label>
+                  <select
+                    value={kycForm.document_type}
+                    onChange={(e) => setKycForm({ ...kycForm, document_type: e.target.value })}
+                    className="input-field"
+                    required
+                  >
+                    <option value="aadhaar">Aadhaar Card</option>
+                    <option value="pan">PAN Card</option>
+                    <option value="driving_license">Driving License</option>
+                    <option value="passport">Passport</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Document Number</label>
+                  <label className="block text-sm text-gray-400 mb-2">Document Number *</label>
                   <input
                     type="text"
+                    value={kycForm.document_number}
+                    onChange={(e) => setKycForm({ ...kycForm, document_number: e.target.value })}
                     className="input-field"
                     placeholder="Enter document number"
+                    required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Upload Document</label>
+                  <label className="block text-sm text-gray-400 mb-2">Upload Document Image (Optional)</label>
                   <div className="border-2 border-dashed border-white/20 rounded-xl p-8 text-center hover:border-blue-500/50 transition-colors cursor-pointer">
                     <Upload className="mx-auto mb-3 text-gray-400" size={32} />
                     <p className="text-sm text-gray-400">
@@ -200,14 +325,33 @@ export function ProfilePage({ context }: ProfilePageProps) {
                     <p className="text-xs text-gray-500 mt-1">
                       PNG, JPG or PDF (max. 5MB)
                     </p>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        // TODO: Upload to Supabase Storage and get URL
+                        // For now, just store the file name
+                        if (e.target.files?.[0]) {
+                          setKycForm({ ...kycForm, document_image_url: e.target.files[0].name });
+                        }
+                      }}
+                    />
                   </div>
+                  {kycForm.document_image_url && (
+                    <p className="text-xs text-green-400 mt-2">File: {kycForm.document_image_url}</p>
+                  )}
                 </div>
 
-                <button className="w-full btn-primary">
-                  Submit for Verification
+                <button
+                  type="submit"
+                  disabled={submittingKYC}
+                  className="w-full btn-primary disabled:opacity-50"
+                >
+                  {submittingKYC ? 'Submitting...' : 'Submit for Verification'}
                 </button>
               </div>
-            </div>
+            </form>
           )}
         </div>
       </div>

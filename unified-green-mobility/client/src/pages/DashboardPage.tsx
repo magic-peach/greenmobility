@@ -78,27 +78,55 @@ export function DashboardPage({ context, onNavigate }: DashboardPageProps) {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <button
-          onClick={() => onNavigate('ride-search')}
-          className="glass-card p-6 text-left hover:scale-105 transition-all duration-300 slide-in-up"
+          onClick={() => {
+            if (context.user?.kyc_status !== 'approved' && context.user?.kyc_status !== 'verified') {
+              alert('KYC approval required to join rides. Please complete KYC verification in your profile.');
+              return;
+            }
+            onNavigate('ride-search');
+          }}
+          className={`glass-card p-6 text-left hover:scale-105 transition-all duration-300 slide-in-up ${
+            context.user?.kyc_status !== 'approved' && context.user?.kyc_status !== 'verified'
+              ? 'opacity-60 cursor-not-allowed'
+              : ''
+          }`}
           style={{ animationDelay: '0.1s' }}
         >
           <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mb-4 neon-glow-blue">
             <Search className="text-white" size={24} />
           </div>
           <h3 className="text-xl font-bold mb-2">Find a Ride</h3>
-          <p className="text-gray-400 text-sm">Search for available carpools</p>
+          <p className="text-gray-400 text-sm">
+            {context.user?.kyc_status !== 'approved' && context.user?.kyc_status !== 'verified'
+              ? 'KYC approval required'
+              : 'Search for available carpools'}
+          </p>
         </button>
 
         <button
-          onClick={() => onNavigate('ride-create')}
-          className="glass-card p-6 text-left hover:scale-105 transition-all duration-300 slide-in-up"
+          onClick={() => {
+            if (context.user?.kyc_status !== 'approved' && context.user?.kyc_status !== 'verified') {
+              alert('KYC approval required to create rides. Please complete KYC verification in your profile.');
+              return;
+            }
+            onNavigate('ride-create');
+          }}
+          className={`glass-card p-6 text-left hover:scale-105 transition-all duration-300 slide-in-up ${
+            context.user?.kyc_status !== 'approved' && context.user?.kyc_status !== 'verified'
+              ? 'opacity-60 cursor-not-allowed'
+              : ''
+          }`}
           style={{ animationDelay: '0.2s' }}
         >
           <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl flex items-center justify-center mb-4 neon-glow-pink">
             <Plus className="text-white" size={24} />
           </div>
           <h3 className="text-xl font-bold mb-2">Offer a Ride</h3>
-          <p className="text-gray-400 text-sm">Share your journey</p>
+          <p className="text-gray-400 text-sm">
+            {context.user?.kyc_status !== 'approved' && context.user?.kyc_status !== 'verified'
+              ? 'KYC approval required'
+              : 'Share your journey'}
+          </p>
         </button>
 
         <button

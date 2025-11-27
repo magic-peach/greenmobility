@@ -15,49 +15,61 @@ export default function Admin() {
 
   useEffect(() => {
     checkSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkSession = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (!session?.access_token) {
         router.push('/login');
         return;
       }
+
       setAccessToken(session.access_token);
-      await fetchUserProfile(session.user.id, session.access_token);
+      await fetchUserProfile(session.user.id);
     } catch (error) {
+      console.error('Admin session check error:', error);
       router.push('/login');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchUserProfile = async (userId: string, token: string) => {
-    const userData = await import("@/lib/fetchUserProfile").then(m => m.fetchUserProfile(userId));
-    if (userData) {
-      console.log('[DEBUG] Fetched user profile:', { id: userData.id, email: userData.email, role: userData.role });
-      setUser(userData);
-      
-      // If user is not admin, show error
-      if (userData.role !== 'admin') {
-        console.warn('[DEBUG] User role is not admin:', userData.role);
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const userData = await import('@/lib/fetchUserProfile').then((m) =>
+        m.fetchUserProfile(userId),
+      );
+      if (userData) {
+        setUser(userData);
       }
-    } else {
-      console.error('[DEBUG] Failed to fetch user profile');
+    } catch (err) {
+      console.error('Failed to load admin user profile:', err);
     }
   };
 
   const refreshUser = async () => {
-    if (user?.id && accessToken) {
-      await fetchUserProfile(user.id, accessToken);
+    if (user?.id) {
+      await fetchUserProfile(user.id);
     }
   };
 
-  if (loading || !user || !accessToken) {
+  if (loading || !accessToken) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex items-center justify-center">
-        <div className="loading-spinner"></div>
+        <div className="loading-spinner" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex items-center justify-center">
+        <p className="text-gray-300">Loading admin profile...</p>
       </div>
     );
   }
@@ -67,9 +79,12 @@ export default function Admin() {
       <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex items-center justify-center">
         <div className="text-center">
           <p className="text-xl text-red-400 mb-4">Access Denied</p>
-          <p className="text-gray-400 mb-4">Your account does not have admin privileges.</p>
+          <p className="text-gray-400 mb-4">
+            Your account does not have admin privileges.
+          </p>
           <p className="text-sm text-gray-500 mb-4">
-            Current role: <span className="text-yellow-400">{user.role}</span>
+            Current role:{' '}
+            <span className="text-yellow-400 capitalize">{user.role}</span>
           </p>
           <button
             onClick={() => router.push('/dashboard')}
@@ -96,14 +111,14 @@ export default function Admin() {
         currentPage="admin"
         onNavigate={(page) => {
           const routes: Record<string, string> = {
-            'dashboard': '/dashboard',
-            'profile': '/profile',
+            dashboard: '/dashboard',
+            profile: '/profile',
             'ride-search': '/rides/search',
             'ride-create': '/rides/create',
-            'parking': '/parking',
-            'leaderboard': '/leaderboard',
-            'history': '/history',
-            'admin': '/admin',
+            parking: '/parking',
+            leaderboard: '/leaderboard',
+            history: '/history',
+            admin: '/admin',
           };
           router.push(routes[page] || '/dashboard');
         }}
@@ -118,3 +133,5 @@ export default function Admin() {
     </>
   );
 }
+
+

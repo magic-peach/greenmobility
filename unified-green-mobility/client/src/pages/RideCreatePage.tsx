@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { MapPin, Calendar, Clock, Users, Car, Bike, Zap, DollarSign, ArrowRight } from 'lucide-react';
+import { MapPin, Calendar, Clock, Users, Car, Bike, Zap, ArrowRight } from 'lucide-react';
+import { formatINR } from '@/utils/currency';
 import type { AppContextType } from '@/types/AppContext';
 import { projectId } from '../utils/supabase/info';
 
@@ -220,20 +221,20 @@ export function RideCreatePage({ context, onNavigate }: RideCreatePageProps) {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Fare per Passenger ($)</label>
+              <label className="block text-sm text-gray-400 mb-2">Fare per Passenger (₹)</label>
               <div className="relative">
-                <DollarSign className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 font-bold">₹</span>
                 <input
                   type="number"
                   min="0"
-                  step="0.5"
+                  step="10"
                   value={formData.estimated_fare}
                   onChange={(e) => handleChange('estimated_fare', parseFloat(e.target.value))}
-                  className="input-field pl-12"
+                  className="input-field pl-10"
                   required
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-2">Suggested: $10-20 per person</p>
+              <p className="text-xs text-gray-500 mt-2">Suggested: ₹100-200 per person</p>
             </div>
           </div>
         </div>
@@ -256,7 +257,7 @@ export function RideCreatePage({ context, onNavigate }: RideCreatePageProps) {
             </div>
             <div className="text-center">
               <p className="text-2xl font-bold text-orange-400">
-                ${(formData.estimated_fare * formData.total_seats).toFixed(0)}
+                {formatINR(formData.estimated_fare * formData.total_seats)}
               </p>
               <p className="text-xs text-gray-400">Potential Earnings</p>
             </div>

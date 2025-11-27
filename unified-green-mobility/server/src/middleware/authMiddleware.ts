@@ -38,7 +38,16 @@ export const authMiddleware = async (
       .single();
 
     if (profileError || !profile) {
-      return res.status(401).json({ error: 'User profile not found' });
+      console.error('[AUTH] User profile lookup failed:', {
+        authUserId: user.id,
+        authUserEmail: user.email,
+        profileError: profileError?.message,
+        profileErrorCode: profileError?.code,
+      });
+      return res.status(401).json({ 
+        error: 'User profile not found',
+        details: `Auth user ID: ${user.id}, Email: ${user.email}` 
+      });
     }
 
     req.user = {

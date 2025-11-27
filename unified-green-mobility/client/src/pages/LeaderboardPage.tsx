@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Trophy, TrendingUp, Leaf, Medal, Crown, Award } from 'lucide-react';
+import { Trophy, TrendingUp, Leaf, Medal, Crown, Award, Gift } from 'lucide-react';
 import type { AppContextType } from '@/types/AppContext';
 import { projectId } from '../utils/supabase/info';
+import { formatINR } from '@/utils/currency';
 
 type LeaderboardPageProps = {
   context: AppContextType;
@@ -15,15 +16,29 @@ type LeaderboardEntry = {
   distance: number;
 };
 
+interface Coupon {
+  id: string;
+  category: string;
+  title: string;
+  description: string;
+  points_required: number;
+  value_inr: number;
+}
+
 export function LeaderboardPage({ context }: LeaderboardPageProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myStats, setMyStats] = useState<any>(null);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
+  const [redeeming, setRedeeming] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLeaderboard();
     fetchMyStats();
+    fetchCoupons();
   }, []);
+
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
 
   const fetchLeaderboard = async () => {
     try {
@@ -43,6 +58,49 @@ export function LeaderboardPage({ context }: LeaderboardPageProps) {
       console.error('Error fetching leaderboard:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCoupons = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/coupons`, {
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCoupons(data);
+      }
+    } catch (error) {
+      console.error('Error fetching coupons:', error);
+    }
+  };
+
+  const handleRedeemCoupon = async (couponId: string) => {
+    setRedeeming(couponId);
+    try {
+      const response = await fetch(`${apiBaseUrl}/coupons/${couponId}/redeem`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Coupon redeemed! ${data.title} - ${formatINR(data.value_inr)}`);
+        await fetchMyStats();
+        await fetchCoupons();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to redeem coupon');
+      }
+    } catch (error) {
+      console.error('Error redeeming coupon:', error);
+      alert('Failed to redeem coupon');
+    } finally {
+      setRedeeming(null);
     }
   };
 
@@ -258,7 +316,7 @@ export function LeaderboardPage({ context }: LeaderboardPageProps) {
             <div className="space-y-3">
               <div className="flex items-start space-x-3">
                 <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-green-400">+50</span>
+                  <span className="text-green-400">+10</span>
                 </div>
                 <div>
                   <p className="font-medium text-sm">Join a carpool</p>
@@ -267,11 +325,11 @@ export function LeaderboardPage({ context }: LeaderboardPageProps) {
               </div>
               <div className="flex items-start space-x-3">
                 <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-blue-400">+100</span>
+                  <span className="text-blue-400">+20</span>
                 </div>
                 <div>
                   <p className="font-medium text-sm">Offer a ride</p>
-                  <p className="text-xs text-gray-400">Per completed ride</p>
+                  <p className="text-xs text-gray-400">Per completed ride as driver</p>
                 </div>
               </div>
               <div className="flex items-start space-x-3">
@@ -295,19 +353,58 @@ export function LeaderboardPage({ context }: LeaderboardPageProps) {
             </div>
           </div>
 
-          {/* Achievements */}
+          {/* Coupons */}
           <div className="glass-card p-6 slide-in-up" style={{ animationDelay: '0.4s' }}>
-            <h2 className="text-xl font-bold mb-4">Achievements</h2>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="aspect-square bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-xl flex items-center justify-center border border-green-500/30">
-                <Leaf className="text-green-400" size={32} />
-              </div>
-              <div className="aspect-square bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl flex items-center justify-center border border-blue-500/30">
-                <Trophy className="text-blue-400" size={32} />
-              </div>
-              <div className="aspect-square bg-gradient-to-br from-pink-500/20 to-orange-500/20 rounded-xl flex items-center justify-center border border-pink-500/30 opacity-30">
-                <Award className="text-gray-400" size={32} />
-              </div>
+            <h2 className="text-xl font-bold mb-4 flex items-center">
+              <Gift className="mr-2 text-pink-400" size={20} />
+              Redeem Coupons
+            </h2>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {coupons.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">No coupons available</p>
+              ) : (
+                coupons.map((coupon) => {
+                  const canRedeem = myStats && myStats.points >= coupon.points_required;
+                  return (
+                    <div
+                      key={coupon.id}
+                      className={`p-4 rounded-xl border ${
+                        canRedeem
+                          ? 'bg-gradient-to-br from-pink-500/10 to-orange-500/10 border-pink-500/30'
+                          : 'bg-white/5 border-white/10 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="font-bold text-sm">{coupon.title}</p>
+                          <p className="text-xs text-gray-400 mt-1">{coupon.description}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-bold text-green-400">
+                            {formatINR(coupon.value_inr)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-3">
+                        <span className="text-xs text-gray-400">
+                          {coupon.points_required} points required
+                        </span>
+                        <button
+                          onClick={() => handleRedeemCoupon(coupon.id)}
+                          disabled={!canRedeem || redeeming === coupon.id}
+                          className={`px-3 py-1 rounded-lg text-xs transition-all ${
+                            canRedeem
+                              ? 'bg-pink-500 hover:bg-pink-600 text-white'
+                              : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {redeeming === coupon.id ? 'Redeeming...' : 'Redeem'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

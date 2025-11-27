@@ -56,6 +56,8 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
     start: '',
     end: '',
   });
+  const [myReservations, setMyReservations] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -67,6 +69,18 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
     if (selectedLot) {
       fetchSpots(selectedLot.id);
     }
+  }, [selectedLot]);
+
+  useEffect(() => {
+    fetchMyReservations();
+    // Auto-refresh every 10 seconds to update statuses
+    const interval = setInterval(() => {
+      if (selectedLot) {
+        fetchSpots(selectedLot.id);
+      }
+      fetchMyReservations();
+    }, 10000); // Refresh every 10 seconds
+    return () => clearInterval(interval);
   }, [selectedLot]);
 
   useEffect(() => {
@@ -107,10 +121,16 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
 
       if (response.ok) {
         const data = await response.json();
-        setSpots(data);
+        // Backend returns { spots: [...], summary: {...} }
+        const spotsArray = Array.isArray(data) ? data : (data.spots || []);
+        setSpots(spotsArray);
+      } else {
+        console.error('Failed to fetch spots:', response.status);
+        setSpots([]); // Set to empty array on error
       }
     } catch (error) {
       console.error('Error fetching spots:', error);
+      setSpots([]); // Set to empty array on error
     }
   };
 
@@ -161,6 +181,7 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
         alert('Parking spot reserved successfully!');
         setSelectedSpot(null);
         fetchSpots(selectedLot.id);
+        fetchMyReservations(); // Refresh reservations list
       } else {
         const error = await response.json();
         alert(error.error || 'Failed to reserve spot');
@@ -170,6 +191,51 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
       alert('Failed to reserve spot');
     } finally {
       setReserving(false);
+    }
+  };
+
+  const fetchMyReservations = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/parking/reservations/my`, {
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMyReservations(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      console.error('Error fetching reservations:', error);
+    }
+  };
+
+  const handleCompleteReservation = async (reservationId: string) => {
+    if (!confirm('Mark this parking reservation as completed?')) return;
+
+    setRefreshing(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/parking/reservations/${reservationId}/complete`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        alert('Parking reservation completed! Spot is now available.');
+        fetchSpots(selectedLot?.id || '');
+        fetchMyReservations();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to complete reservation');
+      }
+    } catch (error) {
+      console.error('Error completing reservation:', error);
+      alert('Failed to complete reservation');
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -270,7 +336,7 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
             <div className="glass-card p-6 slide-in-up">
               <h3 className="font-bold mb-4">Select a Spot</h3>
               <div className="grid grid-cols-5 gap-2 max-h-96 overflow-y-auto">
-                {spots.map((spot) => (
+                {Array.isArray(spots) && spots.length > 0 ? spots.map((spot) => (
                   <button
                     key={spot.id}
                     onClick={() => handleSpotClick(spot)}
@@ -291,7 +357,13 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
                       {spot.is_accessible && <Accessibility size={10} className="text-blue-400" />}
                     </div>
                   </button>
-                ))}
+                )) : (
+                  <div className="col-span-5 text-center py-8 text-gray-400">
+                    {Array.isArray(spots) && spots.length === 0 
+                      ? 'No spots available for this parking lot'
+                      : 'Loading spots...'}
+                  </div>
+                )}
               </div>
               <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
                 <div className="flex items-center space-x-1">
@@ -353,6 +425,52 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
                 >
                   Cancel
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* My Active Reservations */}
+          {myReservations.filter((r: any) => r.status === 'upcoming' || r.status === 'active').length > 0 && (
+            <div className="glass-card p-6 slide-in-up">
+              <h3 className="font-bold mb-4 flex items-center">
+                <Calendar className="mr-2 text-blue-400" size={20} />
+                My Active Reservations
+              </h3>
+              <div className="space-y-3">
+                {myReservations
+                  .filter((r: any) => r.status === 'upcoming' || r.status === 'active')
+                  .map((reservation: any) => (
+                    <div
+                      key={reservation.id}
+                      className="p-4 bg-white/5 rounded-lg border border-white/10"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="font-medium">
+                            Spot #{reservation.parking_spot?.spot_number || 'N/A'} - {reservation.parking_spot?.parking_lot?.name || 'Unknown Lot'}
+                          </p>
+                          <p className="text-sm text-gray-400 mt-1 flex items-center">
+                            <Clock size={14} className="mr-1" />
+                            {new Date(reservation.start_time).toLocaleString()} - {new Date(reservation.end_time).toLocaleString()}
+                          </p>
+                          <span className={`badge mt-2 ${
+                            reservation.status === 'active' ? 'badge-warning' : 'badge-info'
+                          }`}>
+                            {reservation.status}
+                          </span>
+                        </div>
+                        {(reservation.status === 'active' || (new Date(reservation.start_time) <= new Date() && reservation.status === 'upcoming')) && (
+                          <button
+                            onClick={() => handleCompleteReservation(reservation.id)}
+                            disabled={refreshing}
+                            className="btn-primary btn-sm ml-3"
+                          >
+                            {refreshing ? '...' : 'Complete'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
               </div>
             </div>
           )}

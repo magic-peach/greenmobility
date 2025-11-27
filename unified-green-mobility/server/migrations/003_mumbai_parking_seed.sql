@@ -107,7 +107,7 @@ VALUES
   ),
   (
     'f6a7b8c9-d0e1-2345-f678-901234567890',
-    'beverage',
+    'food',
     'Starbucks ₹150 Gift Card',
     'Enjoy your favorite coffee',
     75,
@@ -129,42 +129,42 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO kb_documents (id, title, content, tags, created_at)
 VALUES
   (
-    'kb1-ride-sharing',
+    'a1b2c3d4-e5f6-7890-abcd-ef123456789a',
     'How Carpool Rides Work',
     'Carpool rides allow drivers to share their journey with passengers heading in the same direction. Drivers post rides with origin, destination, departure time, and available seats. Passengers can search and request to join. Once accepted, passengers receive an OTP that must be verified at pickup. Drivers earn 20 points per completed ride, passengers earn 10 points. All payments are handled in Indian Rupees (₹).',
     ARRAY['rides', 'carpool', 'how-to'],
     NOW()
   ),
   (
-    'kb2-kyc',
+    'b2c3d4e5-f6a7-8901-bcde-f123456789ab',
     'KYC Requirements and Approval',
     'KYC (Know Your Customer) verification is required to create or join rides and earn rewards. Submit your document type (Aadhaar, PAN, Driving License) and document number. Upload a clear image of your ID. Admin review typically takes 24-48 hours. Once approved, you can participate in all platform features. KYC status can be checked in your profile.',
     ARRAY['kyc', 'verification', 'approval'],
     NOW()
   ),
   (
-    'kb3-rewards',
+    'c3d4e5f6-a7b8-9012-cdef-123456789012',
     'Points, Ranks, and Coupons',
     'Earn points by completing rides: 20 points as a driver, 10 points as a passenger. Points can be redeemed for coupons in Indian Rupees (₹). Available coupons include food vouchers, travel credits, and gift cards. Check the leaderboard to see your rank. Points accumulate over time and can be redeemed anytime.',
     ARRAY['rewards', 'points', 'coupons', 'leaderboard'],
     NOW()
   ),
   (
-    'kb4-parking',
+    'd4e5f6a7-b8c9-0123-def4-567890123456',
     'Smart Parking Usage Rules',
     'Smart parking allows you to reserve parking spots at major locations in Mumbai including Phoenix Palladium, Jio World Drive, and R City Mall. Select a lot from the map, choose an available spot, and reserve for your desired time window. EV-friendly and accessible spots are marked. Reservations can be cancelled up to 1 hour before start time.',
     ARRAY['parking', 'reservation', 'mumbai'],
     NOW()
   ),
   (
-    'kb5-safety',
+    'e5f6a7b8-c9d0-1234-ef56-789012345678',
     'SOS and Safety Policies',
     'Your safety is our priority. Use the SOS button during active rides to alert our support team with your location. Emergency contacts can be added in your profile. Support tickets can be filed for any issues. All SOS events are logged and reviewed by our safety team. In case of emergency, contact local authorities immediately.',
     ARRAY['safety', 'sos', 'emergency', 'support'],
     NOW()
   ),
   (
-    'kb6-payment',
+    'f6a7b8c9-d0e1-2345-f678-901234567890',
     'Payment in Indian Rupees',
     'All fares and payments are in Indian Rupees (₹). Fares are calculated based on distance and shared among passengers. After ride completion, passengers receive payment prompts. Mark yourself as paid, and the driver confirms. Payment confirmation closes the ride. All monetary values throughout the platform are displayed in ₹.',
     ARRAY['payment', 'fare', 'rupees', 'inr'],

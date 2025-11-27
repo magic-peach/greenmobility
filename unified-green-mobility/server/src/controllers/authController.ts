@@ -173,12 +173,18 @@ export const authController = {
       const userEmail = req.user.email;
       if (process.env.NODE_ENV === 'development') {
         console.log(`[DEV] Admin OTP for ${userEmail}: ${code}`);
+        // In dev mode, also return OTP in response for easier testing
+        res.json({ 
+          message: 'OTP sent to admin email', 
+          sessionId: session.id,
+          otp: code, // Include OTP in dev mode only
+          expiresAt: expiresAt.toISOString()
+        });
       } else {
         // TODO: Send email via SMTP
         // await sendEmail(userEmail, 'Admin Login OTP', `Your OTP is: ${code}`);
+        res.json({ message: 'OTP sent to admin email', sessionId: session.id });
       }
-
-      res.json({ message: 'OTP sent to admin email', sessionId: session.id });
     } catch (error: any) {
       console.error('Request admin OTP error:', error);
       res.status(500).json({ error: 'Failed to request OTP', message: error.message });

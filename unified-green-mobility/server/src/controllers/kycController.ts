@@ -84,14 +84,16 @@ export const kycController = {
 
       const { data, error } = await supabaseAdmin
         .from('user_kyc')
-        .select('*, user:users(id, name, email, phone)')
+        .select('*, user:users!user_kyc_user_id_fkey(id, name, email, phone)')
         .eq('status', 'pending')
         .order('created_at', { ascending: true });
 
       if (error) {
-        return res.status(400).json({ error: 'Failed to fetch pending KYC' });
+        console.error('[KYC] Error fetching pending KYC:', error);
+        return res.status(400).json({ error: 'Failed to fetch pending KYC', details: error.message });
       }
 
+      console.log('[KYC] Found pending KYC records:', data?.length || 0);
       res.json(data || []);
     } catch (error: any) {
       console.error('Get pending KYC error:', error);

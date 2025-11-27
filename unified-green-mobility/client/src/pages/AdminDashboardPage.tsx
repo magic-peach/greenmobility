@@ -1,11 +1,23 @@
 import { useState, useEffect } from 'react';
-import { Users, Car, ParkingSquare, Leaf, TrendingUp, Activity, BarChart3 } from 'lucide-react';
+import { Users, Car, ParkingSquare, Leaf, TrendingUp, Activity, BarChart3, Shield, CheckCircle, X } from 'lucide-react';
 import type { AppContextType } from '@/types/AppContext';
 import { projectId } from '../utils/supabase/info';
 
 type AdminDashboardPageProps = {
   context: AppContextType;
 };
+
+interface PendingKYC {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  document_type: string;
+  document_number: string;
+  document_image_url: string | null;
+  status: string;
+  created_at: string;
+}
 
 export function AdminDashboardPage({ context }: AdminDashboardPageProps) {
   const [analytics, setAnalytics] = useState({
@@ -15,22 +27,24 @@ export function AdminDashboardPage({ context }: AdminDashboardPageProps) {
     total_reservations: 0,
     total_co2_saved: 0,
   });
+  const [pendingKYC, setPendingKYC] = useState<PendingKYC[]>([]);
   const [loading, setLoading] = useState(true);
+  const [kycLoading, setKycLoading] = useState(false);
 
   useEffect(() => {
     fetchAnalytics();
+    fetchPendingKYC();
   }, []);
+
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
 
   const fetchAnalytics = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-1659ed12/admin/analytics`,
-        {
-          headers: {
-            'Authorization': `Bearer ${context.accessToken}`,
-          },
-        }
-      );
+      const response = await fetch(`${apiBaseUrl}/admin/analytics`, {
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setAnalytics(data);
@@ -39,6 +53,86 @@ export function AdminDashboardPage({ context }: AdminDashboardPageProps) {
       console.error('Error fetching analytics:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPendingKYC = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/kyc/pending`, {
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[ADMIN] Pending KYC data:', data);
+        // Transform the data to match the expected format
+        const transformedData = data.map((kyc: any) => ({
+          id: kyc.id,
+          user_id: kyc.user_id,
+          user_name: kyc.user?.name || 'Unknown',
+          user_email: kyc.user?.email || 'Unknown',
+          document_type: kyc.document_type,
+          document_number: kyc.document_number,
+          document_image_url: kyc.document_image_url,
+          status: kyc.status,
+          created_at: kyc.created_at,
+        }));
+        setPendingKYC(transformedData);
+      } else {
+        const errorData = await response.json();
+        console.error('[ADMIN] Failed to fetch pending KYC:', errorData);
+        alert(`Failed to fetch pending KYC: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('[ADMIN] Error fetching pending KYC:', error);
+      alert('Failed to fetch pending KYC. Check console for details.');
+    }
+  };
+
+  const handleKYCApprove = async (kycId: string) => {
+    setKycLoading(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/kyc/${kycId}/approve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+      if (response.ok) {
+        await fetchPendingKYC();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to approve KYC');
+      }
+    } catch (error) {
+      console.error('Error approving KYC:', error);
+      alert('Failed to approve KYC');
+    } finally {
+      setKycLoading(false);
+    }
+  };
+
+  const handleKYCReject = async (kycId: string) => {
+    setKycLoading(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/kyc/${kycId}/reject`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+      if (response.ok) {
+        await fetchPendingKYC();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to reject KYC');
+      }
+    } catch (error) {
+      console.error('Error rejecting KYC:', error);
+      alert('Failed to reject KYC');
+    } finally {
+      setKycLoading(false);
     }
   };
 
@@ -252,6 +346,81 @@ export function AdminDashboardPage({ context }: AdminDashboardPageProps) {
             <p className="text-sm text-gray-400">Trees Planted (equiv.)</p>
           </div>
         </div>
+      </div>
+
+      {/* KYC Approval Section */}
+      <div className="glass-card p-6 mb-8 slide-in-up" style={{ animationDelay: '0.85s' }}>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold flex items-center">
+            <Shield className="mr-2 text-pink-400" size={20} />
+            KYC Approval Queue
+          </h2>
+          <span className="badge badge-warning">{pendingKYC.length} Pending</span>
+        </div>
+
+        {pendingKYC.length === 0 ? (
+          <div className="text-center py-8">
+            <CheckCircle className="mx-auto mb-3 text-green-400" size={48} />
+            <p className="text-gray-400">No pending KYC submissions</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {pendingKYC.map((kyc) => (
+              <div
+                key={kyc.id}
+                className="p-4 bg-white/5 rounded-xl border border-white/10 hover:border-pink-500/50 transition-all"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <h3 className="font-bold">{kyc.user_name}</h3>
+                      <span className="badge badge-info">{kyc.document_type}</span>
+                    </div>
+                    <p className="text-sm text-gray-400 mb-1">{kyc.user_email}</p>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Document: {kyc.document_number}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Submitted: {new Date(kyc.created_at).toLocaleString()}
+                    </p>
+                    {kyc.document_image_url && (
+                      <a
+                        href={kyc.document_image_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-400 hover:text-blue-300 mt-2 inline-block"
+                      >
+                        View Document →
+                      </a>
+                    )}
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleKYCApprove(kyc.id)}
+                      disabled={kycLoading}
+                      className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-500/50 rounded-lg text-green-400 transition-all disabled:opacity-50 flex items-center space-x-2"
+                    >
+                      <CheckCircle size={16} />
+                      <span>Approve</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Are you sure you want to reject this KYC submission?')) {
+                          handleKYCReject(kyc.id);
+                        }
+                      }}
+                      disabled={kycLoading}
+                      className="px-4 py-2 bg-pink-500/20 hover:bg-pink-500/30 border border-pink-500/50 rounded-lg text-pink-400 transition-all disabled:opacity-50 flex items-center space-x-2"
+                    >
+                      <X size={16} />
+                      <span>Reject</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent Activity */}

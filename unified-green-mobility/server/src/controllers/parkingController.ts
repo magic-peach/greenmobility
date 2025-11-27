@@ -35,15 +35,8 @@ export const parkingController = {
         return res.status(400).json({ error: 'Failed to fetch parking spots' });
       }
 
-      // Group by status for summary
-      const summary = {
-        available: data?.filter((s) => s.status === 'available').length || 0,
-        occupied: data?.filter((s) => s.status === 'occupied').length || 0,
-        reserved: data?.filter((s) => s.status === 'reserved').length || 0,
-        out_of_service: data?.filter((s) => s.status === 'out_of_service').length || 0,
-      };
-
-      res.json({ spots: data, summary });
+      // Return just the spots array (frontend expects array)
+      res.json(data || []);
     } catch (error: any) {
       console.error('Get parking spots error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -78,12 +71,15 @@ export const parkingController = {
       }
 
       // Check for overlapping reservations
+      const startTime = new Date(start_time);
+      const endTime = new Date(end_time);
       const { data: overlapping } = await supabaseAdmin
         .from('parking_reservations')
         .select('*')
         .eq('parking_spot_id', parking_spot_id)
         .in('status', ['upcoming', 'active'])
-        .or(`start_time.lte.${end_time},end_time.gte.${start_time}`);
+        .gte('start_time', startTime.toISOString())
+        .lte('start_time', endTime.toISOString());
 
       if (overlapping && overlapping.length > 0) {
         return res.status(400).json({ error: 'Spot is already reserved for this time' });
@@ -107,10 +103,11 @@ export const parkingController = {
         return res.status(400).json({ error: reservationError.message });
       }
 
-      // Update spot status to reserved
+      // Update spot status based on reservation status
+      const spotStatus = status === 'active' ? 'occupied' : 'reserved';
       await supabaseAdmin
         .from('parking_spots')
-        .update({ status: 'reserved' })
+        .update({ status: spotStatus })
         .eq('id', parking_spot_id);
 
       res.status(201).json(reservation);
@@ -128,7 +125,7 @@ export const parkingController = {
 
       const { data, error } = await supabaseAdmin
         .from('parking_reservations')
-        .select('*, parking_spot:parking_spots(*, parking_lot:parking_lots(*))')
+        .select('*, parking_spot:parking_spots!parking_reservations_parking_spot_id_fkey(*, parking_lot:parking_lots(*))')
         .eq('user_id', req.user.id)
         .order('created_at', { ascending: false });
 
@@ -136,7 +133,55 @@ export const parkingController = {
         return res.status(400).json({ error: 'Failed to fetch reservations' });
       }
 
-      res.json(data);
+      // Auto-update reservation statuses based on time
+      if (data) {
+        const now = new Date();
+        for (const reservation of data) {
+          const startTime = new Date(reservation.start_time);
+          const endTime = new Date(reservation.end_time);
+          
+          if (reservation.status === 'upcoming' && startTime <= now) {
+            // Update to active
+            await supabaseAdmin
+              .from('parking_reservations')
+              .update({ status: 'active' })
+              .eq('id', reservation.id);
+            
+            // Update spot to occupied
+            if (reservation.parking_spot_id) {
+              await supabaseAdmin
+                .from('parking_spots')
+                .update({ status: 'occupied' })
+                .eq('id', reservation.parking_spot_id);
+            }
+          } else if (reservation.status === 'active' && endTime <= now) {
+            // Auto-complete expired reservations
+            await supabaseAdmin
+              .from('parking_reservations')
+              .update({ status: 'completed' })
+              .eq('id', reservation.id);
+            
+            // Update spot back to available
+            if (reservation.parking_spot_id) {
+              await supabaseAdmin
+                .from('parking_spots')
+                .update({ status: 'available' })
+                .eq('id', reservation.parking_spot_id);
+            }
+          }
+        }
+        
+        // Re-fetch after updates
+        const { data: updatedData } = await supabaseAdmin
+          .from('parking_reservations')
+          .select('*, parking_spot:parking_spots!parking_reservations_parking_spot_id_fkey(*, parking_lot:parking_lots(*))')
+          .eq('user_id', req.user.id)
+          .order('created_at', { ascending: false });
+        
+        return res.json(updatedData || []);
+      }
+
+      res.json(data || []);
     } catch (error: any) {
       console.error('Get my reservations error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -198,7 +243,7 @@ export const parkingController = {
 
       const { data, error } = await supabaseAdmin
         .from('parking_reservations')
-        .select('*, parking_spot:parking_spots(*, parking_lot:parking_lots(*))')
+        .select('*, parking_spot:parking_spots!parking_reservations_parking_spot_id_fkey(*, parking_lot:parking_lots(*))')
         .eq('id', id)
         .single();
 
@@ -209,6 +254,55 @@ export const parkingController = {
       res.json(data);
     } catch (error: any) {
       console.error('Get reservation by id error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async completeReservation(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+
+      // Get reservation
+      const { data: reservation, error: reservationError } = await supabaseAdmin
+        .from('parking_reservations')
+        .select('*, parking_spot:parking_spots(*)')
+        .eq('id', id)
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (reservationError || !reservation) {
+        return res.status(404).json({ error: 'Reservation not found' });
+      }
+
+      if (reservation.status === 'completed' || reservation.status === 'cancelled') {
+        return res.status(400).json({ error: 'Reservation is already completed or cancelled' });
+      }
+
+      // Update reservation status to completed
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('parking_reservations')
+        .update({ status: 'completed' })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateError) {
+        return res.status(400).json({ error: updateError.message });
+      }
+
+      // Update spot status back to available
+      await supabaseAdmin
+        .from('parking_spots')
+        .update({ status: 'available' })
+        .eq('id', reservation.parking_spot_id);
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error('Complete reservation error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   },

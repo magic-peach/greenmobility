@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, MapPin, Calendar, Users, Car, Bike, Zap, DollarSign } from 'lucide-react';
+import { Search, MapPin, Calendar, Users, Car, Bike, Zap } from 'lucide-react';
+import { formatINR } from '@/utils/currency';
 import type { AppContextType } from '@/types/AppContext';
 import { projectId } from '../utils/supabase/info';
 
@@ -244,7 +245,7 @@ export function RideSearchPage({ context }: RideSearchPageProps) {
                       <div className="text-right">
                         <p className="text-sm text-gray-400">Estimated</p>
                         <p className="text-2xl font-bold text-green-400">
-                          ${ride.estimated_fare}
+                          {formatINR(ride.estimated_fare)}
                         </p>
                       </div>
                     )}
@@ -313,7 +314,7 @@ export function RideSearchPage({ context }: RideSearchPageProps) {
                   <div>
                     <p className="text-sm text-gray-400 mb-2">Fare Share</p>
                     <p className="font-medium text-green-400">
-                      ${selectedRide.estimated_fare}
+                      {formatINR(selectedRide.estimated_fare)}
                     </p>
                   </div>
                 )}
