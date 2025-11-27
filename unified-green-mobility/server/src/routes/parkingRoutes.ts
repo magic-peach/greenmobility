@@ -14,6 +14,7 @@ router.use(authMiddleware);
 
 router.post('/reservations', parkingController.createReservation);
 router.get('/reservations/my', parkingController.getMyReservations);
+router.post('/reservations/:id/payment', parkingController.updatePayment);
 router.patch('/reservations/:id/cancel', parkingController.cancelReservation);
 router.patch('/reservations/:id/complete', parkingController.completeReservation);
 router.get('/reservations/:id', parkingController.getReservationById);

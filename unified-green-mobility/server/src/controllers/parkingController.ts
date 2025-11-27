@@ -25,7 +25,7 @@ export const parkingController = {
     try {
       const { id } = req.params;
 
-      const { data, error } = await supabaseAdmin
+      const { data: spots, error } = await supabaseAdmin
         .from('parking_spots')
         .select('*')
         .eq('parking_lot_id', id)
@@ -35,8 +35,78 @@ export const parkingController = {
         return res.status(400).json({ error: 'Failed to fetch parking spots' });
       }
 
+      // Get active reservations for these spots to update their status
+      if (spots && spots.length > 0) {
+        const spotIds = spots.map(s => s.id);
+        const now = new Date();
+        
+        const { data: activeReservations } = await supabaseAdmin
+          .from('parking_reservations')
+          .select('parking_spot_id, status, start_time, end_time')
+          .in('parking_spot_id', spotIds)
+          .in('status', ['upcoming', 'active']);
+
+        // Update spot statuses based on active reservations
+        if (activeReservations && activeReservations.length > 0) {
+          const reservationMap = new Map();
+          activeReservations.forEach((res: any) => {
+            const startTime = new Date(res.start_time);
+            const endTime = new Date(res.end_time);
+            
+            // Determine actual status
+            let actualStatus = res.status;
+            if (res.status === 'upcoming' && startTime <= now) {
+              actualStatus = 'active';
+            } else if (res.status === 'active' && endTime <= now) {
+              actualStatus = 'completed';
+            }
+            
+            // Update spot status based on reservation
+            if (actualStatus === 'active') {
+              reservationMap.set(res.parking_spot_id, 'occupied');
+            } else if (actualStatus === 'upcoming') {
+              reservationMap.set(res.parking_spot_id, 'reserved');
+            }
+          });
+
+          // Update spots with reservation status
+          spots.forEach((spot: any) => {
+            if (reservationMap.has(spot.id)) {
+              spot.status = reservationMap.get(spot.id);
+            }
+          });
+
+          // Also update the database to keep it in sync (batch update)
+          const updatePromises = Array.from(reservationMap.entries()).map(([spotId, status]) =>
+            supabaseAdmin
+              .from('parking_spots')
+              .update({ status })
+              .eq('id', spotId)
+          );
+          await Promise.all(updatePromises);
+        }
+      }
+
+      // Ensure all spots have a status field (default to 'available' if missing)
+      const spotsWithStatus = (spots || []).map((spot: any) => {
+        const status = spot.status || 'available';
+        return {
+          ...spot,
+          status: status,
+        };
+      });
+
+      console.log(`Returning ${spotsWithStatus.length} spots for parking lot ${id}`);
+      if (spotsWithStatus.length > 0) {
+        console.log('Sample spot:', {
+          id: spotsWithStatus[0].id,
+          spot_number: spotsWithStatus[0].spot_number,
+          status: spotsWithStatus[0].status,
+        });
+      }
+
       // Return just the spots array (frontend expects array)
-      res.json(data || []);
+      res.json(spotsWithStatus);
     } catch (error: any) {
       console.error('Get parking spots error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -55,6 +125,20 @@ export const parkingController = {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
+      // Validate that end_time is after start_time
+      const startTime = new Date(start_time);
+      const endTime = new Date(end_time);
+      
+      if (endTime <= startTime) {
+        return res.status(400).json({ error: 'End time must be after start time' });
+      }
+
+      // Validate minimum duration (1 hour)
+      const hours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+      if (hours < 1) {
+        return res.status(400).json({ error: 'Minimum reservation duration is 1 hour' });
+      }
+
       // Check if spot is available
       const { data: spot, error: spotError } = await supabaseAdmin
         .from('parking_spots')
@@ -70,9 +154,7 @@ export const parkingController = {
         return res.status(400).json({ error: 'Spot is not available' });
       }
 
-      // Check for overlapping reservations
-      const startTime = new Date(start_time);
-      const endTime = new Date(end_time);
+      // Check for overlapping reservations (using startTime and endTime already declared above)
       const { data: overlapping } = await supabaseAdmin
         .from('parking_reservations')
         .select('*')
@@ -85,6 +167,10 @@ export const parkingController = {
         return res.status(400).json({ error: 'Spot is already reserved for this time' });
       }
 
+      // Determine reservation status based on start time
+      const now = new Date();
+      const reservationStatus = startTime <= now ? 'active' : 'upcoming';
+
       // Create reservation
       const { data: reservation, error: reservationError } = await supabaseAdmin
         .from('parking_reservations')
@@ -93,24 +179,79 @@ export const parkingController = {
           parking_spot_id,
           start_time,
           end_time,
-          status: 'upcoming',
+          status: reservationStatus,
           amount_paid: amount_paid || 0,
+          payment_status: 'pending', // Default to pending until payment is confirmed
         })
-        .select('*, parking_spot:parking_spots(*, parking_lot:parking_lots(*))')
+        .select('*, parking_spot:parking_spots!parking_reservations_parking_spot_id_fkey(*, parking_lot:parking_lots(*))')
         .single();
 
       if (reservationError) {
-        return res.status(400).json({ error: reservationError.message });
+        console.error('Reservation insert error:', reservationError);
+        return res.status(400).json({ error: reservationError.message || 'Failed to create reservation' });
       }
 
       // Update spot status based on reservation status
-      const spotStatus = status === 'active' ? 'occupied' : 'reserved';
-      await supabaseAdmin
+      const spotStatus = reservationStatus === 'active' ? 'occupied' : 'reserved';
+      const { error: updateError } = await supabaseAdmin
         .from('parking_spots')
         .update({ status: spotStatus })
         .eq('id', parking_spot_id);
 
+      if (updateError) {
+        console.error('Spot update error:', updateError);
+        // Don't fail the request, but log the error
+      }
+
       res.status(201).json(reservation);
+    } catch (error: any) {
+      console.error('Create reservation error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  async updatePayment(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+      const { payment_method, transaction_id, amount } = req.body;
+
+      // Get reservation
+      const { data: reservation, error: reservationError } = await supabaseAdmin
+        .from('parking_reservations')
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', req.user.id)
+        .single();
+
+      if (reservationError || !reservation) {
+        return res.status(404).json({ error: 'Reservation not found' });
+      }
+
+      // Update reservation with payment info
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from('parking_reservations')
+        .update({
+          amount_paid: amount || reservation.amount_paid || 0,
+          payment_status: 'confirmed',
+          payment_method: payment_method || null,
+          transaction_id: transaction_id || null,
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateError) {
+        return res.status(400).json({ error: updateError.message });
+      }
+
+      // Create payment transaction record (if payment_transactions table exists)
+      // For now, we'll just update the reservation
+
+      res.json(updated);
     } catch (error: any) {
       console.error('Create reservation error:', error);
       res.status(500).json({ error: 'Internal server error' });

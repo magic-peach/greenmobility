@@ -15,6 +15,8 @@ export function DashboardPage({ context, onNavigate }: DashboardPageProps) {
     total_distance_km: 0,
   });
   const [recentRides, setRecentRides] = useState([]);
+  const [activeReservations, setActiveReservations] = useState<any[]>([]);
+  const [recentParkings, setRecentParkings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -50,10 +52,51 @@ export function DashboardPage({ context, onNavigate }: DashboardPageProps) {
         const ridesData = await ridesResponse.json();
         setRecentRides(ridesData.slice(0, 3));
       }
+
+      // Fetch parking reservations
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
+      const reservationsResponse = await fetch(`${apiBaseUrl}/parking/reservations/my`, {
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+      if (reservationsResponse.ok) {
+        const reservationsData = await reservationsResponse.json();
+        const allReservations = Array.isArray(reservationsData) ? reservationsData : [];
+        // Filter active reservations (upcoming/active)
+        setActiveReservations(allReservations.filter((r: any) => r.status === 'upcoming' || r.status === 'active'));
+        // Get recent parkings (last 5, including completed)
+        setRecentParkings(allReservations.slice(0, 5));
+      }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCompleteReservation = async (reservationId: string) => {
+    if (!confirm('Mark this parking reservation as completed?')) return;
+
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
+      const response = await fetch(`${apiBaseUrl}/parking/reservations/${reservationId}/complete`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        alert('Parking reservation completed! Spot is now available.');
+        fetchDashboardData(); // Refresh data
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to complete reservation');
+      }
+    } catch (error) {
+      console.error('Error completing reservation:', error);
+      alert('Failed to complete reservation');
     }
   };
 
@@ -196,8 +239,130 @@ export function DashboardPage({ context, onNavigate }: DashboardPageProps) {
         </div>
       </div>
 
+      {/* Active Parking Reservations */}
+      {activeReservations.length > 0 && (
+        <div className="glass-card p-6 slide-in-up mb-8" style={{ animationDelay: '0.7s' }}>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold flex items-center">
+              <ParkingSquare className="mr-2 text-green-400" size={24} />
+              Active Parking Reservations
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {activeReservations.map((reservation: any) => (
+              <div
+                key={reservation.id}
+                className="p-4 bg-white/5 rounded-xl border border-white/10 hover:border-green-500/50 transition-all"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="font-medium">
+                      Spot #{reservation.parking_spot?.spot_number || 'N/A'} - {reservation.parking_spot?.parking_lot?.name || 'Unknown Lot'}
+                    </p>
+                    <p className="text-sm text-gray-400 mt-1">
+                      {new Date(reservation.start_time).toLocaleString()} - {new Date(reservation.end_time).toLocaleString()}
+                    </p>
+                    <span className={`badge mt-2 ${
+                      reservation.status === 'active' ? 'badge-warning' : 'badge-info'
+                    }`}>
+                      {reservation.status}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleCompleteReservation(reservation.id)}
+                    className="btn-primary btn-sm ml-3"
+                    disabled={reservation.status === 'completed' || reservation.status === 'cancelled'}
+                  >
+                    {reservation.status === 'completed' || reservation.status === 'cancelled' ? 'Completed' : 'Complete'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent Parkings */}
+      <div className="glass-card p-6 slide-in-up mb-8" style={{ animationDelay: '0.8s' }}>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold flex items-center">
+            <ParkingSquare className="mr-2 text-green-400" size={24} />
+            Recent Parkings
+          </h2>
+          <button 
+            onClick={() => onNavigate('parking')}
+            className="text-green-400 hover:text-green-300 text-sm font-medium transition-colors"
+          >
+            View All →
+          </button>
+        </div>
+
+        {recentParkings.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+              <ParkingSquare className="text-gray-400" size={32} />
+            </div>
+            <p className="text-gray-400 mb-4">No parking reservations yet</p>
+            <button
+              onClick={() => onNavigate('parking')}
+              className="btn-primary"
+            >
+              Find Parking
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {recentParkings.map((reservation: any, index: number) => (
+              <div
+                key={reservation.id}
+                className="p-4 bg-white/5 rounded-xl border border-white/10 hover:border-green-500/50 transition-all cursor-pointer"
+                style={{ animationDelay: `${0.9 + index * 0.1}s` }}
+                onClick={() => onNavigate('parking')}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
+                        <ParkingSquare size={16} className="text-white" />
+                      </div>
+                      <div>
+                        <p className="font-medium">
+                          Spot #{reservation.parking_spot?.spot_number || 'N/A'} - {reservation.parking_spot?.parking_lot?.name || 'Unknown Lot'}
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          {reservation.parking_spot?.parking_lot?.address || 'Mumbai'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4 text-sm">
+                      <span className="text-gray-400">
+                        {new Date(reservation.start_time).toLocaleDateString()} - {new Date(reservation.end_time).toLocaleDateString()}
+                      </span>
+                      <span className={`badge ${
+                        reservation.status === 'active' ? 'badge-warning' :
+                        reservation.status === 'upcoming' ? 'badge-info' :
+                        reservation.status === 'completed' ? 'badge-success' :
+                        'badge-info'
+                      }`}>
+                        {reservation.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-400">Amount</p>
+                    <p className="text-2xl font-bold text-green-400">
+                      ₹{reservation.amount_paid || 0}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Recent Activity */}
-      <div className="glass-card p-6 slide-in-up" style={{ animationDelay: '0.7s' }}>
+      <div className="glass-card p-6 slide-in-up" style={{ animationDelay: '1.0s' }}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold">Recent Rides</h2>
           <button className="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors">

@@ -13,6 +13,7 @@
 import { useState, useEffect } from 'react';
 import { MapPin, Zap, Accessibility, Calendar, Clock } from 'lucide-react';
 import ParkingMap from './ParkingMap';
+import PaymentModal from './PaymentModal';
 import type { AppContextType } from '@/types/AppContext';
 
 interface ParkingLot {
@@ -58,6 +59,9 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
   });
   const [myReservations, setMyReservations] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [pendingReservation, setPendingReservation] = useState<any>(null);
+  const [paymentAmount, setPaymentAmount] = useState(0);
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -121,9 +125,15 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
 
       if (response.ok) {
         const data = await response.json();
-        // Backend returns { spots: [...], summary: {...} }
+        // Backend returns array of spots
         const spotsArray = Array.isArray(data) ? data : (data.spots || []);
-        setSpots(spotsArray);
+        // Ensure all spots have a status field (default to 'available' if missing)
+        const spotsWithStatus = spotsArray.map((spot: any) => ({
+          ...spot,
+          status: spot.status || 'available',
+        }));
+        console.log('Fetched spots:', spotsWithStatus.length, 'spots with statuses');
+        setSpots(spotsWithStatus);
       } else {
         console.error('Failed to fetch spots:', response.status);
         setSpots([]); // Set to empty array on error
@@ -162,6 +172,29 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
   const handleReserve = async () => {
     if (!selectedSpot || !selectedLot || !reservationTime.start || !reservationTime.end) return;
 
+    // Validate that end time is after start time
+    const start = new Date(reservationTime.start);
+    let end = new Date(reservationTime.end);
+    
+    // Handle case where end time appears to be before start (likely next day)
+    if (end < start) {
+      // Check if end time is very early (before 6 AM) and start is late (after 6 PM)
+      // This likely means end is next day
+      if (end.getHours() < 6 && start.getHours() >= 18) {
+        end.setDate(end.getDate() + 1);
+      } else {
+        alert('End time must be after start time. Please select a valid time range.');
+        return;
+      }
+    }
+
+    // Ensure minimum 1 hour duration
+    const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+    if (hours < 1) {
+      alert('Minimum reservation duration is 1 hour.');
+      return;
+    }
+
     setReserving(true);
     try {
       const response = await fetch(`${apiBaseUrl}/parking/reservations`, {
@@ -172,16 +205,34 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
         },
         body: JSON.stringify({
           parking_spot_id: selectedSpot.id,
-          start_time: new Date(reservationTime.start).toISOString(),
-          end_time: new Date(reservationTime.end).toISOString(),
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
         }),
       });
 
       if (response.ok) {
-        alert('Parking spot reserved successfully!');
+        const reservation = await response.json();
+        // Calculate payment amount (using validated times)
+        const start = new Date(reservationTime.start);
+        let end = new Date(reservationTime.end);
+        if (end < start) {
+          end.setDate(end.getDate() + 1);
+        }
+        const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+        const amount = Math.max(20, Math.ceil(hours * 20)); // Minimum ₹20, ₹20 per hour
+        
+        // Show payment modal
+        setPendingReservation(reservation);
+        setPaymentAmount(amount);
+        setShowPaymentModal(true);
         setSelectedSpot(null);
-        fetchSpots(selectedLot.id);
-        fetchMyReservations(); // Refresh reservations list
+        
+        // Immediately refresh spots to show updated status
+        if (selectedLot) {
+          setTimeout(() => {
+            fetchSpots(selectedLot.id);
+          }, 300);
+        }
       } else {
         const error = await response.json();
         alert(error.error || 'Failed to reserve spot');
@@ -211,6 +262,45 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
     }
   };
 
+  const handlePaymentSuccess = async (paymentMethod: string, transactionId: string) => {
+    if (!pendingReservation) return;
+
+    try {
+      // Update reservation with payment info
+      const response = await fetch(`${apiBaseUrl}/parking/reservations/${pendingReservation.id}/payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${context.accessToken}`,
+        },
+        body: JSON.stringify({
+          payment_method: paymentMethod,
+          transaction_id: transactionId,
+          amount: paymentAmount,
+        }),
+      });
+
+      if (response.ok) {
+        // Refresh spots and reservations
+        if (selectedLot) {
+          // Add a small delay to ensure backend has updated
+          setTimeout(() => {
+            fetchSpots(selectedLot.id);
+          }, 500);
+        }
+        fetchMyReservations();
+        setPendingReservation(null);
+        alert('Payment confirmed! Your reservation is active.');
+      } else {
+        const error = await response.json();
+        console.error('Failed to update payment info:', error);
+        alert(error.error || 'Failed to confirm payment');
+      }
+    } catch (error) {
+      console.error('Error updating payment:', error);
+    }
+  };
+
   const handleCompleteReservation = async (reservationId: string) => {
     if (!confirm('Mark this parking reservation as completed?')) return;
 
@@ -225,7 +315,9 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
 
       if (response.ok) {
         alert('Parking reservation completed! Spot is now available.');
-        fetchSpots(selectedLot?.id || '');
+        if (selectedLot) {
+          fetchSpots(selectedLot.id);
+        }
         fetchMyReservations();
       } else {
         const error = await response.json();
@@ -336,28 +428,34 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
             <div className="glass-card p-6 slide-in-up">
               <h3 className="font-bold mb-4">Select a Spot</h3>
               <div className="grid grid-cols-5 gap-2 max-h-96 overflow-y-auto">
-                {Array.isArray(spots) && spots.length > 0 ? spots.map((spot) => (
-                  <button
-                    key={spot.id}
-                    onClick={() => handleSpotClick(spot)}
-                    disabled={spot.status !== 'available'}
-                    className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs transition-all ${
-                      selectedSpot?.id === spot.id
-                        ? 'bg-blue-500 neon-glow-blue'
-                        : spot.status === 'available'
-                        ? 'bg-green-500/20 hover:bg-green-500/40 border border-green-500/50'
-                        : spot.status === 'occupied'
-                        ? 'bg-pink-500/20 border border-pink-500/30 cursor-not-allowed opacity-60'
-                        : 'bg-orange-500/20 border border-orange-500/30 cursor-not-allowed opacity-60'
-                    }`}
-                  >
-                    <span className="font-bold">{spot.spot_number}</span>
-                    <div className="flex space-x-1 mt-1">
-                      {spot.is_ev_friendly && <Zap size={10} className="text-yellow-400" />}
-                      {spot.is_accessible && <Accessibility size={10} className="text-blue-400" />}
-                    </div>
-                  </button>
-                )) : (
+                {Array.isArray(spots) && spots.length > 0 ? spots.map((spot) => {
+                  const spotStatus = spot.status || 'available';
+                  return (
+                    <button
+                      key={spot.id}
+                      onClick={() => handleSpotClick(spot)}
+                      disabled={spotStatus !== 'available'}
+                      className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs transition-all ${
+                        selectedSpot?.id === spot.id
+                          ? 'bg-blue-500 neon-glow-blue'
+                          : spotStatus === 'available'
+                          ? 'bg-green-500/20 hover:bg-green-500/40 border border-green-500/50'
+                          : spotStatus === 'occupied'
+                          ? 'bg-pink-500/20 border border-pink-500/30 cursor-not-allowed opacity-60'
+                          : spotStatus === 'reserved'
+                          ? 'bg-orange-500/20 border border-orange-500/30 cursor-not-allowed opacity-60'
+                          : 'bg-gray-500/20 border border-gray-500/30 cursor-not-allowed opacity-60'
+                      }`}
+                      title={`Spot ${spot.spot_number} - ${spotStatus}`}
+                    >
+                      <span className="font-bold">{spot.spot_number}</span>
+                      <div className="flex space-x-1 mt-1">
+                        {spot.is_ev_friendly && <Zap size={10} className="text-yellow-400" />}
+                        {spot.is_accessible && <Accessibility size={10} className="text-blue-400" />}
+                      </div>
+                    </button>
+                  );
+                }) : (
                   <div className="col-span-5 text-center py-8 text-gray-400">
                     {Array.isArray(spots) && spots.length === 0 
                       ? 'No spots available for this parking lot'
@@ -407,10 +505,24 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-300">Estimated Cost</span>
                     <span className="text-2xl font-bold text-blue-400">
-                      ₹{Math.ceil((new Date(reservationTime.end).getTime() - new Date(reservationTime.start).getTime()) / (1000 * 60 * 60) * 20)}
+                      ₹{(() => {
+                        if (!reservationTime.start || !reservationTime.end) return 0;
+                        const start = new Date(reservationTime.start);
+                        const end = new Date(reservationTime.end);
+                        // Handle case where end time is on next day (e.g., 12:03 AM after 6:01 PM)
+                        if (end < start) {
+                          // End time is before start time, likely means it's next day
+                          end.setDate(end.getDate() + 1);
+                        }
+                        const hours = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60));
+                        return Math.ceil(hours * 20);
+                      })()}
                     </span>
                   </div>
                   <p className="text-xs text-gray-400">₹20 per hour</p>
+                  {reservationTime.start && reservationTime.end && new Date(reservationTime.end) < new Date(reservationTime.start) && (
+                    <p className="text-xs text-red-400 mt-2">⚠️ End time must be after start time</p>
+                  )}
                 </div>
                 <button
                   onClick={handleReserve}
@@ -476,6 +588,18 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
           )}
         </div>
       </div>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setPendingReservation(null);
+        }}
+        amount={paymentAmount}
+        reservationId={pendingReservation?.id}
+        onPaymentSuccess={handlePaymentSuccess}
+      />
     </div>
   );
 }
