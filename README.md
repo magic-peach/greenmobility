@@ -75,6 +75,8 @@ npm install
 
 ### 3. Configure Environment Variables
 
+**⚠️ IMPORTANT: `.env` files are local only and NEVER committed to the repository.**
+
 #### Server (.env in `/server` directory)
 
 ```env
@@ -89,12 +91,31 @@ GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 
 #### Client (.env.local in `/client` directory)
 
+**Client-side environment variables (public, embedded in browser bundle):**
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+NEXT_PUBLIC_MAPTILER_API_KEY=your_maptiler_api_key
 ```
+
+**Server-only environment variables (never exposed to client):**
+```env
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+**Note:** 
+- Variables prefixed with `NEXT_PUBLIC_*` are embedded in the client bundle and are intentionally public.
+- `GEMINI_API_KEY` is server-only and used only in API routes (`app/api/chat/route.ts`). It must never be exposed to the client.
+
+#### TODO: Rotate API Keys
+
+**⚠️ SECURITY: If API keys were previously committed to the repository, they must be rotated immediately:**
+
+1. **Supabase**: Generate new keys in Supabase Dashboard → Project Settings → API
+2. **MapTiler**: Generate new API key in MapTiler Dashboard
+3. **Gemini**: Generate new API key in Google AI Studio
+4. Update all environment variables in your deployment platform (Netlify/Vercel) with the new keys
 
 ### 4. Run the Application
 

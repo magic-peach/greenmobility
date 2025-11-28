@@ -1,13 +1,13 @@
+# NOTE: Only NEXT_PUBLIC_* keys are allowed to be public. Server-only secrets like GEMINI_API_KEY must NEVER be exposed.
+
 [build]
+  base = "unified-green-mobility"
   command = "cd client && npm install && npm run build"
   publish = "client/.next"
-  base = "unified-green-mobility"
 
 [build.environment]
   NODE_VERSION = "18.x"
-  # Exclude .next cache from secrets scanning (paths relative to repo root)
-  # The cache contains build artifacts with embedded env vars
-  SECRETS_SCAN_OMIT_PATHS = "unified-green-mobility/client/.next/cache,unified-green-mobility/client/.next/cache/**,.next/cache,.next/cache/**"
-  # Exclude public keys (intentionally embedded in client bundle) and server-side API key
-  # NEXT_PUBLIC_* keys are meant to be public, GEMINI_API_KEY is server-side only
-  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_MAPTILER_API_KEY,NEXT_PUBLIC_API_BASE_URL,GEMINI_API_KEY"
+  # Exclude .next cache from secrets scanning (build artifacts)
+  SECRETS_SCAN_OMIT_PATHS = ".next/cache,.next/cache/**"
+  # Exclude public keys from secrets scanning (these are intentionally public and embedded in client bundle)
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_MAPTILER_API_KEY,NEXT_PUBLIC_API_BASE_URL"

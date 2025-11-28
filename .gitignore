@@ -2,11 +2,12 @@
 # They may contain sensitive secrets and are generated during build.
 
 # Environment files (local only, never commit)
-.env
-.env.local
-.env*.local
 unified-green-mobility/client/.env*
 unified-green-mobility/server/.env*
+
+# Next.js build output (generated during build, never commit)
+unified-green-mobility/client/.next
+unified-green-mobility/client/.next/*
 
 # Dependencies
 node_modules/
@@ -36,17 +37,6 @@ yarn-error.log*
 *.swo
 *~
 
-# Next.js build output (generated during build, never commit)
-.next/
-.next/**
-.next/cache/
-out/
-unified-green-mobility/client/.next
-unified-green-mobility/client/.next/*
-unified-green-mobility/client/.next/cache/
-unified-green-mobility/client/out/
-
 # TypeScript
 *.tsbuildinfo
-next-env.d.ts
 
