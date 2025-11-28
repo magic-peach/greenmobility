@@ -5,8 +5,9 @@
 
 [build.environment]
   NODE_VERSION = "18.x"
-
-# Note: To exclude .next from secrets scanning, set SECRETS_SCAN_OMIT_PATHS
-# in Netlify UI: Site Settings → Build & deploy → Environment
-# Value: "client/.next,client/.next/cache"
-# This is safe because .next is generated during build and not committed
+  # Exclude .next cache from secrets scanning (paths relative to repo root)
+  # The cache contains build artifacts with embedded env vars
+  SECRETS_SCAN_OMIT_PATHS = "unified-green-mobility/client/.next/cache,unified-green-mobility/client/.next/cache/**,.next/cache,.next/cache/**"
+  # Exclude public keys (intentionally embedded in client bundle) and server-side API key
+  # NEXT_PUBLIC_* keys are meant to be public, GEMINI_API_KEY is server-side only
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_MAPTILER_API_KEY,NEXT_PUBLIC_API_BASE_URL,GEMINI_API_KEY"
