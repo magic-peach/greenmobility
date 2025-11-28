@@ -1,4 +1,5 @@
 # NOTE: Only NEXT_PUBLIC_* keys are allowed to be public. Server-only secrets like GEMINI_API_KEY must NEVER be exposed.
+# GEMINI_API_KEY is used only in server-side API routes (app/api/chat/route.ts) and must never appear in client bundles.
 
 [build]
   base = "unified-green-mobility"
@@ -7,7 +8,9 @@
 
 [build.environment]
   NODE_VERSION = "18.x"
-  # Exclude .next cache from secrets scanning (build artifacts)
+  # Exclude .next cache from secrets scanning (build artifacts - paths relative to build directory)
+  # The cache contains webpack bundles with embedded env vars, which is expected for NEXT_PUBLIC_* vars
   SECRETS_SCAN_OMIT_PATHS = ".next/cache,.next/cache/**"
   # Exclude public keys from secrets scanning (these are intentionally public and embedded in client bundle)
+  # DO NOT add GEMINI_API_KEY here - it should never be in the bundle. If it appears, that's a bug to fix.
   SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_MAPTILER_API_KEY,NEXT_PUBLIC_API_BASE_URL"
