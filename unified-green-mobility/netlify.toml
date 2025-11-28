@@ -1,0 +1,12 @@
+[build]
+  command = "cd client && npm install && npm run build"
+  publish = "client/.next"
+  base = "unified-green-mobility"
+
+[build.environment]
+  NODE_VERSION = "18.x"
+
+# Note: To exclude .next from secrets scanning, set SECRETS_SCAN_OMIT_PATHS
+# in Netlify UI: Site Settings → Build & deploy → Environment
+# Value: "client/.next,client/.next/cache"
+# This is safe because .next is generated during build and not committed

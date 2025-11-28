@@ -31,7 +31,13 @@ yarn-error.log*
 
 # Next.js
 .next/
+.next/**
+.next/cache/
 out/
+client/.next/
+client/.next/**
+client/.next/cache/
+client/out/
 
 # TypeScript
 *.tsbuildinfo
