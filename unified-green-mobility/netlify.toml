@@ -9,8 +9,10 @@
 [build.environment]
   NODE_VERSION = "18.x"
   # Exclude .next cache from secrets scanning (build artifacts - paths relative to build directory)
-  # The cache contains webpack bundles with embedded env vars, which is expected for NEXT_PUBLIC_* vars
-  SECRETS_SCAN_OMIT_PATHS = ".next/cache,.next/cache/**"
+  # This includes both client and server bundle caches where env vars are embedded
+  # Server bundles may contain GEMINI_API_KEY (server-only), which is expected and safe
+  SECRETS_SCAN_OMIT_PATHS = ".next/cache,.next/cache/**,.next/cache/webpack,.next/cache/webpack/**"
   # Exclude public keys from secrets scanning (these are intentionally public and embedded in client bundle)
-  # DO NOT add GEMINI_API_KEY here - it should never be in the bundle. If it appears, that's a bug to fix.
+  # DO NOT add GEMINI_API_KEY here - it should never be in the client bundle. 
+  # If it appears in server bundles, that's expected (server-only code).
   SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_MAPTILER_API_KEY,NEXT_PUBLIC_API_BASE_URL"

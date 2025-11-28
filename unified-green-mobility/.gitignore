@@ -5,8 +5,11 @@
 .env
 .env.local
 .env*.local
-unified-green-mobility/client/.env*
-unified-green-mobility/server/.env*
+.env.production
+**/.env*
+**/.env
+**/.env.local
+**/.env.production
 
 # Dependencies
 node_modules/
@@ -41,10 +44,10 @@ yarn-error.log*
 .next/**
 .next/cache/
 out/
-unified-green-mobility/client/.next
-unified-green-mobility/client/.next/*
-unified-green-mobility/client/.next/cache/
-unified-green-mobility/client/out/
+**/.next
+**/.next/**
+**/.next/cache/
+**/out/
 
 # TypeScript
 *.tsbuildinfo
