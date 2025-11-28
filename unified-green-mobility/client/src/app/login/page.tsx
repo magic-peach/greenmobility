@@ -1,6 +1,6 @@
 'use client';
 
-import { LoginPage } from '@/pages/LoginPage';
+import { LoginPage } from '@/views/LoginPage';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';

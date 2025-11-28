@@ -1,6 +1,6 @@
 'use client';
 
-import { RegisterPage } from '@/pages/RegisterPage';
+import { RegisterPage } from '@/views/RegisterPage';
 import { supabase } from '@/lib/supabase';
 import { projectId, publicAnonKey } from '@/utils/supabase/info';
 import { useRouter } from 'next/navigation';

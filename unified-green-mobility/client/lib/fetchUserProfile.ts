@@ -21,7 +21,7 @@ export async function fetchUserProfile(userId: string): Promise<User | null> {
           name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
           phone: authUser.user_metadata?.phone,
           role: authUser.email === 'akankshatrehun3108@gmail.com' ? 'admin' : 'passenger',
-          kyc_status: 'unverified',
+          kyc_status: 'not_submitted',
           created_at: authUser.created_at,
         };
       }
@@ -40,7 +40,7 @@ export async function fetchUserProfile(userId: string): Promise<User | null> {
         name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
         phone: authUser.user_metadata?.phone,
         role: authUser.email === 'akankshatrehun3108@gmail.com' ? 'admin' : 'passenger',
-        kyc_status: 'unverified',
+        kyc_status: 'not_submitted',
         created_at: authUser.created_at,
       };
     }

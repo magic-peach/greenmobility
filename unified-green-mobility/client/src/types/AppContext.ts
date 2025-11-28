@@ -6,7 +6,7 @@ export type User = {
   name: string;
   phone?: string;
   role: 'driver' | 'passenger' | 'admin';
-  kyc_status: 'unverified' | 'pending' | 'verified';
+  kyc_status: 'not_submitted' | 'pending' | 'approved' | 'rejected';
   created_at: string;
 };
 

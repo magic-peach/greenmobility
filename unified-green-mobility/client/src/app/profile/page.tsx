@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { ProfilePage } from '@/pages/ProfilePage';
+import { ProfilePage } from '@/views/ProfilePage';
 import { Navbar } from '@/components/Navbar';
 import type { User, AppContextType } from '@/types/AppContext';
 

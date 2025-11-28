@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { ParkingMapPage } from '@/pages/ParkingMapPage';
+import { ParkingMapPage } from '@/views/ParkingMapPage';
 import { Navbar } from '@/components/Navbar';
 import type { User, AppContextType } from '@/types/AppContext';
 

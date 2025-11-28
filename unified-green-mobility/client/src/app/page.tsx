@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { WelcomePage } from '@/pages/WelcomePage';
+import { WelcomePage } from '@/views/WelcomePage';
 
 export default function Home() {
   const router = useRouter();

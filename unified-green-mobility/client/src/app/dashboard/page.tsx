@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { DashboardPage } from '@/pages/DashboardPage';
+import { DashboardPage } from '@/views/DashboardPage';
 import { Navbar } from '@/components/Navbar';
 import type { User, AppContextType } from '@/types/AppContext';
 
@@ -24,7 +24,7 @@ export default function Dashboard() {
             email: authUser.email || '',
             name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
             role: 'passenger',
-            kyc_status: 'unverified',
+            kyc_status: 'not_submitted',
             created_at: authUser.created_at,
           };
           setUser(fallbackUser);

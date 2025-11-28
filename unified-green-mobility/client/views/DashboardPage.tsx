@@ -122,14 +122,14 @@ export function DashboardPage({ context, onNavigate }: DashboardPageProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <button
           onClick={() => {
-            if (context.user?.kyc_status !== 'verified') {
+            if (context.user?.kyc_status !== 'approved') {
               alert('KYC approval required to join rides. Please complete KYC verification in your profile.');
               return;
             }
             onNavigate('ride-search');
           }}
           className={`glass-card p-6 text-left hover:scale-105 transition-all duration-300 slide-in-up ${
-            context.user?.kyc_status !== 'verified'
+            context.user?.kyc_status !== 'approved'
               ? 'opacity-60 cursor-not-allowed'
               : ''
           }`}
@@ -140,7 +140,7 @@ export function DashboardPage({ context, onNavigate }: DashboardPageProps) {
           </div>
           <h3 className="text-xl font-bold mb-2">Find a Ride</h3>
           <p className="text-gray-400 text-sm">
-            {context.user?.kyc_status !== 'verified'
+            {context.user?.kyc_status !== 'approved'
               ? 'KYC approval required'
               : 'Search for available carpools'}
           </p>
@@ -148,14 +148,14 @@ export function DashboardPage({ context, onNavigate }: DashboardPageProps) {
 
         <button
           onClick={() => {
-            if (context.user?.kyc_status !== 'verified') {
+            if (context.user?.kyc_status !== 'approved') {
               alert('KYC approval required to create rides. Please complete KYC verification in your profile.');
               return;
             }
             onNavigate('ride-create');
           }}
           className={`glass-card p-6 text-left hover:scale-105 transition-all duration-300 slide-in-up ${
-            context.user?.kyc_status !== 'verified'
+            context.user?.kyc_status !== 'approved'
               ? 'opacity-60 cursor-not-allowed'
               : ''
           }`}
@@ -166,7 +166,7 @@ export function DashboardPage({ context, onNavigate }: DashboardPageProps) {
           </div>
           <h3 className="text-xl font-bold mb-2">Offer a Ride</h3>
           <p className="text-gray-400 text-sm">
-            {context.user?.kyc_status !== 'verified'
+            {context.user?.kyc_status !== 'approved'
               ? 'KYC approval required'
               : 'Share your journey'}
           </p>

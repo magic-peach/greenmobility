@@ -26,7 +26,7 @@ export default function Dashboard() {
             email: authUser.email || '',
             name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
             role: 'passenger',
-            kyc_status: 'unverified',
+            kyc_status: 'not_submitted',
             created_at: authUser.created_at,
           };
           setUser(fallbackUser);

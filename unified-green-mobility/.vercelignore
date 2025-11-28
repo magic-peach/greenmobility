@@ -5,4 +5,5 @@ shared
 .env
 .env.local
 *.log
+client/src/pages
 

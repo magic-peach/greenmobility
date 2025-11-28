@@ -141,7 +141,7 @@ export function ProfilePage({ context }: ProfilePageProps) {
           <div className="flex-1 text-center md:text-left">
             <div className="flex items-center justify-center md:justify-start space-x-3 mb-2">
               <h1 className="text-3xl font-bold">{context.user?.name}</h1>
-              {context.user?.kyc_status === 'verified' && (
+              {context.user?.kyc_status !== 'approved' && (
                 <CheckCircle className="text-green-400" size={24} />
               )}
             </div>
@@ -239,7 +239,7 @@ export function ProfilePage({ context }: ProfilePageProps) {
             KYC Verification
           </h2>
 
-          {context.user?.kyc_status === 'verified' ? (
+          {context.user?.kyc_status === 'approved' ? (
             <div className="text-center py-8">
               <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4 neon-glow-green">
                 <CheckCircle className="text-green-400" size={40} />
