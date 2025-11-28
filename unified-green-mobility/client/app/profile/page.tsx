@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { ImpactDashboard } from '@/pages/ImpactDashboard';
+import { ProfilePage } from '@/views/ProfilePage';
 import { Navbar } from '@/components/Navbar';
 import type { User, AppContextType } from '@/types/AppContext';
 
-export default function Impact() {
+export default function Profile() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -46,6 +46,11 @@ export default function Impact() {
     }
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
   if (loading || !user || !accessToken) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex items-center justify-center">
@@ -65,7 +70,7 @@ export default function Impact() {
     <>
       <Navbar
         user={user}
-        currentPage="dashboard"
+        currentPage="profile"
         onNavigate={(page) => {
           const routes: Record<string, string> = {
             'dashboard': '/dashboard',
@@ -79,15 +84,11 @@ export default function Impact() {
           };
           router.push(routes[page] || '/dashboard');
         }}
-        onLogout={async () => {
-          await supabase.auth.signOut();
-          router.push('/login');
-        }}
+        onLogout={handleLogout}
       />
       <main className="pt-20">
-        <ImpactDashboard context={appContext} />
+        <ProfilePage context={appContext} />
       </main>
     </>
   );
 }
-

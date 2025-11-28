@@ -6,7 +6,7 @@ import { calculateFareShare, estimateFuelCost } from '../utils/fareCalculator'
 import { generateOTP } from '../utils/otp'
 import { getDistanceAndETA } from '../utils/distance'
 import { calculateCO2, calculateCO2Saved } from '../utils/co2Calculator'
-import { awardPointsForCompletedRide } from '../utils/points'
+import { awardPointsForCompletedRide, awardPointsForRideIfEligible } from '../utils/points'
 
 export const rideController = {
   async createRide(req: AuthRequest, res: Response) {
@@ -42,6 +42,7 @@ export const rideController = {
         car_model,
         car_category,
         total_seats,
+        max_passengers,
         estimated_fare,
       } = req.body
 
@@ -56,6 +57,12 @@ export const rideController = {
 
       const totalDistance = haversineDistance(start_lat, start_lng, end_lat, end_lng)
       const fuelCost = estimated_fare || estimateFuelCost(totalDistance, vehicle_type)
+      
+      // Calculate max_passengers (default to total_seats - 1 if not provided)
+      const calculatedMaxPassengers = max_passengers || (total_seats - 1)
+      if (calculatedMaxPassengers < 1) {
+        return res.status(400).json({ error: 'max_passengers must be at least 1' })
+      }
 
       const { data, error } = await supabaseAdmin
         .from('rides')
@@ -79,9 +86,11 @@ export const rideController = {
           car_model,
           car_category: car_category || 'other',
           total_seats,
+          max_passengers: calculatedMaxPassengers,
           available_seats: total_seats - 1, // Driver occupies one seat
           estimated_fare: fuelCost,
           status: 'upcoming',
+          points_awarded: false,
         })
         .select()
         .single()
@@ -183,6 +192,31 @@ export const rideController = {
 
       if (rideError || !ride) {
         return res.status(404).json({ error: 'Ride not found' })
+      }
+
+      // Check user role - only passengers can join rides
+      const { data: user } = await supabaseAdmin
+        .from('users')
+        .select('role')
+        .eq('id', req.user.id)
+        .single()
+
+      if (user?.role !== 'passenger') {
+        return res.status(403).json({ error: 'Only passengers can join rides' })
+      }
+
+      // Check passenger limit
+      const { data: acceptedPassengers } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('id')
+        .eq('ride_id', rideId)
+        .in('status', ['accepted', 'completed'])
+
+      const currentPassengerCount = acceptedPassengers?.length || 0
+      const maxPassengers = ride.max_passengers || (ride.total_seats - 1)
+
+      if (currentPassengerCount >= maxPassengers) {
+        return res.status(409).json({ error: 'Passenger limit reached for this ride.' })
       }
 
       if (ride.available_seats <= 0) {
@@ -312,6 +346,62 @@ export const rideController = {
     }
   },
 
+  async getDriverRides(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Unauthorized' })
+      }
+
+      // Verify user is a driver
+      const { data: user } = await supabaseAdmin
+        .from('users')
+        .select('role')
+        .eq('id', req.user.id)
+        .single()
+
+      if (user?.role !== 'driver') {
+        return res.status(403).json({ error: 'Only drivers can access this endpoint' })
+      }
+
+      // Fetch all rides created by this driver
+      const { data: rides, error } = await supabaseAdmin
+        .from('rides')
+        .select(`
+          *,
+          passengers:ride_passengers!inner(
+            id,
+            passenger_id,
+            status,
+            payment_status
+          )
+        `)
+        .eq('driver_id', req.user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        return res.status(400).json({ error: 'Failed to fetch driver rides' })
+      }
+
+      // Group rides by status and calculate passenger counts
+      const groupedRides = rides?.map((ride: any) => {
+        const acceptedPassengers = ride.passengers?.filter((p: any) => 
+          p.status === 'accepted' || p.status === 'completed'
+        ) || []
+        
+        return {
+          ...ride,
+          current_passenger_count: acceptedPassengers.length,
+          max_passengers: ride.max_passengers || (ride.total_seats - 1),
+        }
+      }) || []
+
+      res.json(groupedRides)
+    } catch (error: any) {
+      console.error('Get driver rides error:', error)
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  },
+
   async getMyJoinedRides(req: AuthRequest, res: Response) {
     try {
       if (!req.user) {
@@ -320,7 +410,13 @@ export const rideController = {
 
       const { data, error } = await supabaseAdmin
         .from('ride_passengers')
-        .select('*, ride:rides(*)')
+        .select(`
+          *,
+          ride:rides(
+            *,
+            driver:users!rides_driver_id_fkey(id, name, email)
+          )
+        `)
         .eq('passenger_id', req.user.id)
         .order('created_at', { ascending: false })
 
@@ -586,6 +682,20 @@ export const rideController = {
         return res.status(403).json({ error: 'Only the driver can accept passengers' });
       }
 
+      // Check passenger limit using max_passengers
+      const { data: acceptedPassengers } = await supabaseAdmin
+        .from('ride_passengers')
+        .select('id')
+        .eq('ride_id', rideId)
+        .in('status', ['accepted', 'completed']);
+
+      const currentPassengerCount = acceptedPassengers?.length || 0;
+      const maxPassengers = ride.max_passengers || (ride.total_seats - 1);
+
+      if (currentPassengerCount >= maxPassengers) {
+        return res.status(409).json({ error: 'Passenger limit reached for this ride.' });
+      }
+
       if (ride.available_seats <= 0) {
         return res.status(400).json({ error: 'Carpool limit exceeded for this ride' });
       }
@@ -791,8 +901,9 @@ export const rideController = {
         return res.status(403).json({ error: 'Only the driver can complete the ride' });
       }
 
-      if (ride.status !== 'ongoing') {
-        return res.status(400).json({ error: 'Ride is not ongoing' });
+      // Allow completion from 'ongoing' or 'upcoming' status
+      if (ride.status !== 'ongoing' && ride.status !== 'upcoming') {
+        return res.status(400).json({ error: 'Ride must be ongoing or upcoming to complete' });
       }
 
       // Calculate distance using Google Directions API
@@ -829,26 +940,27 @@ export const rideController = {
       const baseFareINR = ride.estimated_fare || (distanceKm * 10); // ₹10 per km default
       const farePerPassengerINR = baseFareINR / (passengersCount + 1); // Share among all
 
-      // Update passenger fare amounts (in INR)
+      // Update passenger fare amounts (in INR) and set payment_status to 'split_pending'
       for (const passenger of passengers || []) {
         await supabaseAdmin
           .from('ride_passengers')
           .update({
             fare_amount: farePerPassengerINR, // Keep for backward compatibility
             fare_amount_inr: farePerPassengerINR, // Primary INR field
-            payment_status: 'pending',
+            payment_status: 'split_pending', // Changed from 'pending' to 'split_pending'
             status: 'completed',
           })
           .eq('id', passenger.id);
       }
 
-      // Update ride
+      // Update ride - do NOT award points yet (wait for all payments)
       const { data: updatedRide, error: rideError } = await supabaseAdmin
         .from('rides')
         .update({
           status: 'completed',
           distance_km: distanceKm,
           co2_emitted_kg: co2Emitted,
+          points_awarded: false, // Points not awarded until all payments complete
         })
         .eq('id', rideId)
         .select()
@@ -858,14 +970,8 @@ export const rideController = {
         return res.status(400).json({ error: 'Failed to complete ride' });
       }
 
-      // Award points
-      await awardPointsForCompletedRide(
-        rideId,
-        ride.driver_id,
-        passengerIds,
-        distanceKm,
-        co2Saved
-      );
+      // DO NOT award points here - wait for all passengers to pay
+      // Points will be awarded after each payment via awardPointsForRideIfEligible
 
       res.json(updatedRide);
     } catch (error: any) {
@@ -954,6 +1060,18 @@ export const rideController = {
       }
 
       const { rideId } = req.params;
+      const { mode = 'split' } = req.body; // 'split' or 'full'
+
+      // Verify user is a passenger
+      const { data: user } = await supabaseAdmin
+        .from('users')
+        .select('role')
+        .eq('id', req.user.id)
+        .single()
+
+      if (user?.role !== 'passenger') {
+        return res.status(403).json({ error: 'Only passengers can mark payment' });
+      }
 
       // Get passenger record for this user
       const { data: passenger, error: passengerError } = await supabaseAdmin
@@ -967,9 +1085,12 @@ export const rideController = {
         return res.status(404).json({ error: 'Passenger record not found' });
       }
 
+      // Determine payment status based on mode
+      const paymentStatus = mode === 'full' ? 'paid_full' : 'paid';
+
       const { data, error } = await supabaseAdmin
         .from('ride_passengers')
-        .update({ payment_status: 'marked_paid' })
+        .update({ payment_status: paymentStatus })
         .eq('id', passenger.id)
         .select()
         .single();
@@ -977,6 +1098,9 @@ export const rideController = {
       if (error) {
         return res.status(400).json({ error: 'Failed to mark payment' });
       }
+
+      // Check if all passengers have paid and award points if eligible
+      await awardPointsForRideIfEligible(rideId);
 
       res.json(data);
     } catch (error: any) {

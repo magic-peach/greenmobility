@@ -103,10 +103,22 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
 
       if (response.ok) {
         const data = await response.json();
-        setParkingLots(data);
-        if (data.length > 0 && !selectedLot) {
-          setSelectedLot(data[0]);
+        console.log('Fetched parking lots:', data.length, data);
+        setParkingLots(Array.isArray(data) ? data : []);
+        const lotsArray = Array.isArray(data) ? data : [];
+        // Always select the first lot if available and none is selected
+        if (lotsArray.length > 0) {
+          if (!selectedLot) {
+            console.log('Auto-selecting first parking lot:', lotsArray[0].name);
+            setSelectedLot(lotsArray[0]);
+          }
+        } else {
+          console.warn('No parking lots found in response');
         }
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to fetch parking lots:', response.status, errorText);
+        setParkingLots([]);
       }
     } catch (error) {
       console.error('Error fetching parking lots:', error);
@@ -362,41 +374,56 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
 
           {/* Parking Lots List */}
           <div className="space-y-4 slide-in-up">
-            <h2 className="text-xl font-bold">Parking Locations</h2>
-            {parkingLots.map((lot) => (
-              <button
-                key={lot.id}
-                onClick={() => setSelectedLot(lot)}
-                className={`w-full glass-card p-6 text-left transition-all ${
-                  selectedLot?.id === lot.id ? 'border-blue-500 neon-glow-blue' : ''
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center">
-                      <MapPin size={24} />
+            <h2 className="text-xl font-bold mb-4">Parking Locations</h2>
+            {loading ? (
+              <div className="text-center py-8 text-gray-400">
+                <p>Loading parking locations...</p>
+              </div>
+            ) : parkingLots.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <p>No parking locations available</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {parkingLots.map((lot) => (
+                  <button
+                    key={lot.id}
+                    onClick={() => {
+                      console.log('Selecting parking lot:', lot.name);
+                      setSelectedLot(lot);
+                    }}
+                    className={`w-full glass-card p-4 text-left transition-all hover:scale-105 ${
+                      selectedLot?.id === lot.id ? 'border-2 border-blue-500 neon-glow-blue' : 'border border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center">
+                          <MapPin size={24} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-lg">{lot.name}</p>
+                          <p className="text-sm text-gray-400 flex items-center">
+                            <MapPin size={14} className="mr-1" />
+                            {lot.address}
+                          </p>
+                          {lot.has_ev_charging && (
+                            <p className="text-xs text-yellow-400 mt-1 flex items-center">
+                              <Zap size={12} className="mr-1" />
+                              EV Charging Available
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-400">Total Spots</p>
+                        <p className="text-2xl font-bold text-green-400">{lot.total_spots}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-lg">{lot.name}</p>
-                      <p className="text-sm text-gray-400 flex items-center">
-                        <MapPin size={14} className="mr-1" />
-                        {lot.address}
-                      </p>
-                      {lot.has_ev_charging && (
-                        <p className="text-xs text-yellow-400 mt-1 flex items-center">
-                          <Zap size={12} className="mr-1" />
-                          EV Charging Available
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-400">Total Spots</p>
-                    <p className="text-2xl font-bold text-green-400">{lot.total_spots}</p>
-                  </div>
-                </div>
-              </button>
-            ))}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -476,67 +503,103 @@ export default function ParkingDashboard({ context }: ParkingDashboardProps) {
             </div>
           )}
 
-          {/* Reservation Form */}
-          {selectedSpot && (
-            <div className="glass-card p-6 slide-in-up">
-              <h3 className="font-bold mb-4">Reserve Spot #{selectedSpot.spot_number}</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">Start Time</label>
-                  <input
-                    type="datetime-local"
-                    value={reservationTime.start}
-                    onChange={(e) => setReservationTime({ ...reservationTime, start: e.target.value })}
-                    className="input-field"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">End Time</label>
-                  <input
-                    type="datetime-local"
-                    value={reservationTime.end}
-                    onChange={(e) => setReservationTime({ ...reservationTime, end: e.target.value })}
-                    className="input-field"
-                    required
-                  />
-                </div>
-                <div className="p-4 bg-blue-500/10 rounded-lg border border-blue-500/30">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-300">Estimated Cost</span>
-                    <span className="text-2xl font-bold text-blue-400">
-                      ₹{(() => {
-                        if (!reservationTime.start || !reservationTime.end) return 0;
-                        const start = new Date(reservationTime.start);
-                        const end = new Date(reservationTime.end);
-                        // Handle case where end time is on next day (e.g., 12:03 AM after 6:01 PM)
-                        if (end < start) {
-                          // End time is before start time, likely means it's next day
-                          end.setDate(end.getDate() + 1);
-                        }
-                        const hours = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60));
-                        return Math.ceil(hours * 20);
-                      })()}
-                    </span>
+          {/* Reservation Form - Always visible when lot is selected */}
+          {selectedLot ? (
+            <div className="glass-card p-6 slide-in-up border-2 border-blue-500/30">
+              <h3 className="font-bold mb-4 text-xl">Reserve Parking</h3>
+              {selectedSpot ? (
+                <>
+                  <div className="mb-4 p-3 bg-blue-500/10 rounded-lg border border-blue-500/30">
+                    <p className="text-sm text-gray-300">Selected Spot</p>
+                    <p className="text-lg font-bold text-blue-400">Spot #{selectedSpot.spot_number}</p>
                   </div>
-                  <p className="text-xs text-gray-400">₹20 per hour</p>
-                  {reservationTime.start && reservationTime.end && new Date(reservationTime.end) < new Date(reservationTime.start) && (
-                    <p className="text-xs text-red-400 mt-2">⚠️ End time must be after start time</p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-2">Start Time</label>
+                      <input
+                        type="datetime-local"
+                        value={reservationTime.start}
+                        onChange={(e) => setReservationTime({ ...reservationTime, start: e.target.value })}
+                        className="input-field w-full"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-2">End Time</label>
+                      <input
+                        type="datetime-local"
+                        value={reservationTime.end}
+                        onChange={(e) => setReservationTime({ ...reservationTime, end: e.target.value })}
+                        className="input-field w-full"
+                        required
+                      />
+                    </div>
+                    <div className="p-4 bg-blue-500/10 rounded-lg border border-blue-500/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-300">Estimated Cost</span>
+                        <span className="text-2xl font-bold text-blue-400">
+                          ₹{(() => {
+                            if (!reservationTime.start || !reservationTime.end) return 0;
+                            const start = new Date(reservationTime.start);
+                            const end = new Date(reservationTime.end);
+                            // Handle case where end time is on next day (e.g., 12:03 AM after 6:01 PM)
+                            if (end < start) {
+                              // End time is before start time, likely means it's next day
+                              end.setDate(end.getDate() + 1);
+                            }
+                            const hours = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60));
+                            return Math.ceil(hours * 20);
+                          })()}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400">₹20 per hour</p>
+                      {reservationTime.start && reservationTime.end && new Date(reservationTime.end) < new Date(reservationTime.start) && (
+                        <p className="text-xs text-red-400 mt-2">⚠️ End time must be after start time</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleReserve}
+                      disabled={reserving || !reservationTime.start || !reservationTime.end}
+                      className="w-full btn-primary disabled:opacity-50"
+                    >
+                      {reserving ? 'Reserving...' : 'Reserve Spot'}
+                    </button>
+                    <button
+                      onClick={() => setSelectedSpot(null)}
+                      className="w-full btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-gray-300 mb-4 font-medium">Select an available spot from the grid above to reserve</p>
+                  <div className="flex items-center justify-center space-x-4 text-sm text-gray-400 mb-4">
+                    <div className="flex items-center space-x-1">
+                      <div className="w-4 h-4 bg-green-500/20 border border-green-500/50 rounded"></div>
+                      <span>Available</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <div className="w-4 h-4 bg-pink-500/20 border border-pink-500/30 rounded"></div>
+                      <span>Occupied</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <div className="w-4 h-4 bg-orange-500/20 border border-orange-500/30 rounded"></div>
+                      <span>Reserved</span>
+                    </div>
+                  </div>
+                  {selectedLot && (
+                    <p className="text-xs text-gray-500">Parking Lot: <span className="text-blue-400">{selectedLot.name}</span></p>
                   )}
                 </div>
-                <button
-                  onClick={handleReserve}
-                  disabled={reserving || !reservationTime.start || !reservationTime.end}
-                  className="w-full btn-primary disabled:opacity-50"
-                >
-                  {reserving ? 'Reserving...' : 'Reserve Spot'}
-                </button>
-                <button
-                  onClick={() => setSelectedSpot(null)}
-                  className="w-full btn-secondary"
-                >
-                  Cancel
-                </button>
+              )}
+            </div>
+          ) : (
+            <div className="glass-card p-6 slide-in-up">
+              <div className="text-center py-8">
+                <p className="text-gray-400 mb-2">Select a parking location to begin</p>
+                <p className="text-sm text-gray-500">Choose from the list below or click on the map</p>
               </div>
             </div>
           )}

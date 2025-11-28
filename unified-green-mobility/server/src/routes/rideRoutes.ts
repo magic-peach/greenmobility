@@ -10,6 +10,7 @@ router.use(authMiddleware);
 router.post('/', rideController.createRide);
 router.get('/search', rideController.searchRides);
 router.get('/my', rideController.getMyRides);
+router.get('/driver', rideController.getDriverRides);
 router.get('/my-joined', rideController.getMyJoinedRides);
 router.get('/:id', rideController.getRideById);
 router.post('/:rideId/request', rideController.requestRide);

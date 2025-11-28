@@ -36,15 +36,7 @@ export default function Admin() {
   const fetchUserProfile = async (userId: string, token: string) => {
     const userData = await import("@/lib/fetchUserProfile").then(m => m.fetchUserProfile(userId));
     if (userData) {
-      console.log('[DEBUG] Fetched user profile:', { id: userData.id, email: userData.email, role: userData.role });
       setUser(userData);
-      
-      // If user is not admin, show error
-      if (userData.role !== 'admin') {
-        console.warn('[DEBUG] User role is not admin:', userData.role);
-      }
-    } else {
-      console.error('[DEBUG] Failed to fetch user profile');
     }
   };
 
@@ -63,23 +55,7 @@ export default function Admin() {
   }
 
   if (user.role !== 'admin') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-xl text-red-400 mb-4">Access Denied</p>
-          <p className="text-gray-400 mb-4">Your account does not have admin privileges.</p>
-          <p className="text-sm text-gray-500 mb-4">
-            Current role: <span className="text-yellow-400">{user.role}</span>
-          </p>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="btn-primary"
-          >
-            Go to Dashboard
-          </button>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const appContext: AppContextType = {

@@ -141,3 +141,86 @@ export async function awardPointsForCompletedRide(
   }
 }
 
+/**
+ * Award points for a ride if all passengers have paid
+ * Only awards if:
+ * - Ride is completed
+ * - Points not already awarded (points_awarded = false)
+ * - All passengers have payment_status in ('paid', 'paid_full')
+ * 
+ * Driver: +20 points
+ * Each passenger: +10 points
+ */
+export async function awardPointsForRideIfEligible(rideId: string): Promise<boolean> {
+  try {
+    // Get ride details
+    const { data: ride, error: rideError } = await supabaseAdmin
+      .from('rides')
+      .select('*')
+      .eq('id', rideId)
+      .single();
+
+    if (rideError || !ride) {
+      console.error('Ride not found:', rideId);
+      return false;
+    }
+
+    // Skip if points already awarded
+    if (ride.points_awarded) {
+      return false;
+    }
+
+    // Skip if ride is not completed
+    if (ride.status !== 'completed') {
+      return false;
+    }
+
+    // Get all passengers for this ride
+    const { data: passengers, error: passengersError } = await supabaseAdmin
+      .from('ride_passengers')
+      .select('*')
+      .eq('ride_id', rideId)
+      .in('status', ['accepted', 'completed']);
+
+    if (passengersError || !passengers || passengers.length === 0) {
+      console.error('No passengers found for ride:', rideId);
+      return false;
+    }
+
+    // Check if all passengers have paid
+    const allPaid = passengers.every((p: any) => 
+      p.payment_status === 'paid' || p.payment_status === 'paid_full'
+    );
+
+    if (!allPaid) {
+      // Not all passengers have paid yet
+      return false;
+    }
+
+    // All passengers have paid - award points
+    const distanceKm = parseFloat(ride.distance_km) || 0;
+    const co2SavedKg = parseFloat(ride.co2_saved_kg) || 0;
+    const passengerIds = passengers.map((p: any) => p.passenger_id);
+
+    // Award points to driver
+    await awardPoints(ride.driver_id, 20, distanceKm, co2SavedKg);
+
+    // Award points to each passenger
+    for (const passengerId of passengerIds) {
+      await awardPoints(passengerId, 10, distanceKm, co2SavedKg);
+    }
+
+    // Mark points as awarded
+    await supabaseAdmin
+      .from('rides')
+      .update({ points_awarded: true })
+      .eq('id', rideId);
+
+    console.log(`Points awarded for ride ${rideId}: Driver +20, ${passengerIds.length} passengers +10 each`);
+    return true;
+  } catch (error) {
+    console.error('Error awarding points for ride:', error);
+    return false;
+  }
+}
+
