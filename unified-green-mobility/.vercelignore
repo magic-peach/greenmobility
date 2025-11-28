@@ -1,0 +1,8 @@
+node_modules
+server
+shared
+*.md
+.env
+.env.local
+*.log
+
