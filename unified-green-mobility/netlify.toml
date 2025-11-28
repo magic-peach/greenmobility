@@ -2,9 +2,12 @@
 # GEMINI_API_KEY is used only in server-side API routes (app/api/chat/route.ts) and must never appear in client bundles.
 
 [build]
-  base = "unified-green-mobility"
-  command = "cd client && npm install && npm run build"
-  publish = "client/.next"
+  base = "unified-green-mobility/client"
+  command = "npm install && npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
 [build.environment]
   NODE_VERSION = "18.x"
