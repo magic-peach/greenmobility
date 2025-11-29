@@ -95,9 +95,12 @@ export function RideSearchPage({ context }: RideSearchPageProps) {
             distance_km: 0,
             fare_share: rideToJoin.estimated_fare || 0,
             // Explicitly signal that the user has accepted the Terms & Conditions.
-            // Some backend implementations validate this flag and will reject the request
-            // with \"You must accept the Terms & Conditions\" if it's missing.
+            // The backend edge function might be expecting one of several flag names,
+            // so we send a few safe variants (it will ignore the extras it doesn't use).
             accepted_terms: true,
+            acceptedTerms: true,
+            accepted_terms_and_conditions: true,
+            accepted_tnc: true,
           }),
         }
       );
