@@ -94,6 +94,10 @@ export function RideSearchPage({ context }: RideSearchPageProps) {
             drop_lng: 0,
             distance_km: 0,
             fare_share: rideToJoin.estimated_fare || 0,
+            // Explicitly signal that the user has accepted the Terms & Conditions.
+            // Some backend implementations validate this flag and will reject the request
+            // with \"You must accept the Terms & Conditions\" if it's missing.
+            accepted_terms: true,
           }),
         }
       );
